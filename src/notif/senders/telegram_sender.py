@@ -1,3 +1,6 @@
+import html
+import re
+
 import httpx
 
 from notif.models import TelegramConfig
@@ -30,6 +33,9 @@ class TelegramSender:
 			message = f'<b>{title}</b>\n\n{content}'
 		else:
 			message = content
+
+		# 对 HTML 特殊字符进行转义，同时保留合法的 HTML 标签
+		message = self._escape_html(message)
 
 		# 获取 message_type 设置，默认为 HTML
 		message_type = 'HTML'
@@ -68,3 +74,19 @@ class TelegramSender:
 				raise Exception(
 					f'Telegram 推送失败，HTTP 状态码：{response.status_code}，响应内容：{response.text[:200]}'
 				)
+
+	def _escape_html(self, text: str) -> str:
+		"""
+		转义 HTML 特殊字符，同时保留 Telegram 支持的 HTML 标签
+
+		Telegram Bot API 的 HTML 模式要求文本中的 <, >, & 必须转义，
+		但 <b>, <i>, <code> 等合法标签需要保留。
+		"""
+		parts = re.split(r'(<[^>]+>)', text)
+		result = []
+		for part in parts:
+			if part.startswith('<') and part.endswith('>'):
+				result.append(part)
+			else:
+				result.append(html.escape(part))
+		return ''.join(result)
