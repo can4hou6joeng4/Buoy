@@ -70,6 +70,32 @@ class NotificationKit:
 					context_data=context_data,
 				)
 
+	async def push_raw_message(self, title: str, content: str):
+		"""
+		直接发送预格式化消息，不经过模板渲染
+
+		Args:
+			title: 消息标题
+			content: 消息内容
+		"""
+		if not self._handlers:
+			return
+
+		for handler in self._handlers:
+			if handler.is_available():
+				try:
+					await handler.send_func(
+						title=title,
+						content=content,
+						context_data=None,
+					)
+					logger.success(f'{handler.name} 余额变动通知发送成功！')
+				except Exception as e:
+					logger.error(
+						message=f'{handler.name} 余额变动通知发送失败：{e}',
+						exc_info=True,
+					)
+
 	async def _send_to_handler(self, handler: NotificationHandler, context_data: dict):
 		"""
 		向单个 handler 发送通知

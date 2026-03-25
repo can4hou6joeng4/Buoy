@@ -79,6 +79,8 @@ class Application:
 				quota = None
 				used = None
 				balance_changed = None
+				prev_quota = None
+				prev_used = None
 				error = None
 
 				if success:
@@ -99,7 +101,11 @@ class Application:
 						quota=current_quota,
 						used=current_used,
 					)
-					current_balance_hash_dict[account_key] = current_balance_hash
+					current_balance_hash_dict[account_key] = {
+						'hash': current_balance_hash,
+						'quota': current_quota,
+						'used': current_used,
+					}
 
 					# 保存余额数据（仅内存中，用于显示）
 					current_balances[account_key] = {
@@ -110,11 +116,14 @@ class Application:
 					# 判断余额是否变化
 					if last_balance_hash_dict and account_key in last_balance_hash_dict:
 						# 有历史数据，对比 hash
-						last_hash = last_balance_hash_dict[account_key]
+						last_data = last_balance_hash_dict[account_key]
+						last_hash = last_data['hash']
 						if current_balance_hash != last_hash:
 							# 余额发生变化
 							balance_changed = True
 							has_any_balance_changed = True
+							prev_quota = last_data.get('quota')
+							prev_used = last_data.get('used')
 							logger.notify('余额发生变化，将发送通知', safe_account_name)
 						else:
 							# 余额未变化
@@ -139,6 +148,8 @@ class Application:
 					quota=quota,
 					used=used,
 					balance_changed=balance_changed,
+					prev_quota=prev_quota,
+					prev_used=prev_used,
 					error=error,
 				)
 
@@ -237,6 +248,29 @@ class Application:
 			logger.notify('通知已发送')
 		elif not account_results:
 			logger.info('没有账号数据，跳过通知')
+
+		# 余额变动时发送额外的专属通知（独立于常规通知触发条件）
+		if has_any_balance_changed and account_results:
+			changed = [acc for acc in account_results if acc.balance_changed]
+			if changed:
+				tz_name = os.getenv('TZ') or self.DEFAULT_TIMEZONE
+				try:
+					tz = ZoneInfo(tz_name)
+				except Exception:
+					tz = ZoneInfo(self.DEFAULT_TIMEZONE)
+				ts_fmt = os.getenv('TIMESTAMP_FORMAT') or self.DEFAULT_TIMESTAMP_FORMAT
+				ts = datetime.now(tz).strftime(ts_fmt)
+
+				lines = []
+				for acc in changed:
+					lines.append(f'📊 {acc.name}')
+					if acc.prev_quota is not None and acc.prev_used is not None:
+						lines.append(f'  变动前：额度 ${acc.prev_quota}，已用 ${acc.prev_used}')
+					lines.append(f'  变动后：额度 ${acc.quota}，已用 ${acc.used}')
+					lines.append('')
+				lines.append(f'⏰ {ts}')
+				await self.notification_kit.push_raw_message('💰 余额变动提醒', '\n'.join(lines))
+				logger.notify('余额变动通知已发送')
 
 		# 日志总结
 		logger.info(

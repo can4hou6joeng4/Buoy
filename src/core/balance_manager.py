@@ -17,12 +17,14 @@ class BalanceManager:
 		"""
 		self.balance_hash_file = balance_hash_file
 
-	def load_balance_hash(self) -> dict[str, str] | None:
+	def load_balance_hash(self) -> dict[str, dict] | None:
 		"""
-		加载余额 hash 字典
+		加载余额数据
 
 		Returns:
-			字典格式：{api_user_hash: balance_hash}，加载失败返回 None
+			字典格式：{api_user_hash: {"hash": str, "quota": float, "used": float}}
+			兼容旧格式：{api_user_hash: {"hash": str}}
+			加载失败返回 None
 		"""
 		try:
 			if self.balance_hash_file.exists():
@@ -30,7 +32,15 @@ class BalanceManager:
 					content = f.read().strip()
 					if not content:
 						return None
-					return json.loads(content)
+					raw = json.loads(content)
+					# 兼容旧格式：值为字符串时转换为字典
+					result = {}
+					for key, value in raw.items():
+						if isinstance(value, str):
+							result[key] = {'hash': value}
+						else:
+							result[key] = value
+					return result
 
 		except (OSError, IOError) as e:
 			logger.warning(f'加载余额哈希失败：{e}')
@@ -43,18 +53,18 @@ class BalanceManager:
 
 		return None
 
-	def save_balance_hash(self, balance_hash_dict: dict[str, str]):
+	def save_balance_hash(self, balance_data_dict: dict[str, dict]):
 		"""
-		保存余额 hash 字典
+		保存余额数据
 
 		Args:
-			balance_hash_dict: 字典格式 {api_user_hash: balance_hash}
+			balance_data_dict: 字典格式 {api_user_hash: {"hash": str, "quota": float, "used": float}}
 		"""
 		try:
 			# 确保父目录存在
 			self.balance_hash_file.parent.mkdir(parents=True, exist_ok=True)
 			with open(self.balance_hash_file, 'w', encoding='utf-8') as f:
-				json.dump(balance_hash_dict, f, ensure_ascii=False, indent=2)
+				json.dump(balance_data_dict, f, ensure_ascii=False, indent=2)
 
 		except (OSError, IOError) as e:
 			logger.warning(f'保存余额哈希失败：{e}')
