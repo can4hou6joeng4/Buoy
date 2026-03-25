@@ -27,6 +27,9 @@ jobs:
       SERVERPUSH_NOTIF_CONFIG: ${{ secrets.SERVERPUSH_NOTIF_CONFIG }}
       FEISHU_NOTIF_CONFIG: ${{ secrets.FEISHU_NOTIF_CONFIG }}
       WECOM_NOTIF_CONFIG: ${{ secrets.WECOM_NOTIF_CONFIG }}
+      TELEGRAM_NOTIF_CONFIG: ${{ secrets.TELEGRAM_NOTIF_CONFIG }}
+      # 通知触发条件（可选，默认为 balance_changed,failed）
+      NOTIFY_TRIGGERS: ${{ secrets.NOTIFY_TRIGGERS }}
     steps:
       - name: 📥 检出代码
         uses: actions/checkout@v4
