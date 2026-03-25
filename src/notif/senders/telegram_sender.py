@@ -34,13 +34,14 @@ class TelegramSender:
 		else:
 			message = content
 
-		# 对 HTML 特殊字符进行转义，同时保留合法的 HTML 标签
-		message = self._escape_html(message)
-
 		# 获取 message_type 设置，默认为 HTML
 		message_type = 'HTML'
 		if self.config.platform_settings:
 			message_type = self.config.platform_settings.get('message_type', 'HTML')
+
+		# 对 HTML 特殊字符进行转义，同时保留合法的 HTML 标签
+		if message_type == 'HTML':
+			message = self._escape_html(message)
 
 		# 构建请求数据
 		data = {
@@ -65,11 +66,18 @@ class TelegramSender:
 		# 构建 API URL
 		api_url = f'https://api.telegram.org/bot{self.config.bot_token}/sendMessage'
 
-		# 发送请求
+		# 发送请求（含解析失败自动降级）
 		async with httpx.AsyncClient(timeout=30.0) as client:
 			response = await client.post(api_url, json=data)
 
-			# 检查响应状态码
+			if not response.is_success and "can't parse entities" in response.text:
+				# 解析模式不匹配，去掉格式标签后以纯文本重发
+				plain_text = re.sub(r'<[^>]+>', '', message)
+				data['text'] = plain_text
+				data.pop('parse_mode', None)
+				response = await client.post(api_url, json=data)
+
+			# 检查最终响应状态码
 			if not response.is_success:
 				raise Exception(
 					f'Telegram 推送失败，HTTP 状态码：{response.status_code}，响应内容：{response.text[:200]}'
