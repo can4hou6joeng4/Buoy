@@ -10,7 +10,7 @@ class TestNotifyTriggerManager:
 		'env_value,expected_triggers',
 		[
 			# 测试默认值（未配置）
-			(None, {NotifyTrigger.BALANCE_CHANGED, NotifyTrigger.FAILED}),
+			(None, {NotifyTrigger.BALANCE_CHANGED}),
 			# 测试单个触发器
 			('always', {NotifyTrigger.ALWAYS}),
 			# 测试多个触发器
@@ -18,9 +18,9 @@ class TestNotifyTriggerManager:
 			# 测试带空格
 			(' success , balance_changed ', {NotifyTrigger.SUCCESS, NotifyTrigger.BALANCE_CHANGED}),
 			# 测试无效触发器（使用默认值）
-			('invalid', {NotifyTrigger.BALANCE_CHANGED, NotifyTrigger.FAILED}),
+			('invalid', {NotifyTrigger.BALANCE_CHANGED}),
 			# 测试空字符串（使用默认值）
-			('', {NotifyTrigger.BALANCE_CHANGED, NotifyTrigger.FAILED}),
+			('', {NotifyTrigger.BALANCE_CHANGED}),
 			# 测试大小写不敏感
 			('ALWAYS', {NotifyTrigger.ALWAYS}),
 			('Success,Failed', {NotifyTrigger.SUCCESS, NotifyTrigger.FAILED}),
@@ -57,8 +57,8 @@ class TestNotifyTriggerManager:
 			# failed 触发器
 			('failed', False, True, False, False, True),
 			('failed', False, False, False, False, False),
-			# balance_changed 触发器 - 首次运行
-			('balance_changed', True, False, False, True, True),
+			# balance_changed 触发器 - 首次运行但无实际余额变化
+			('balance_changed', True, False, False, True, False),
 			# balance_changed 触发器 - 余额变化
 			('balance_changed', True, False, True, False, True),
 			# balance_changed 触发器 - 余额未变化且非首次
@@ -94,15 +94,16 @@ class TestNotifyTriggerManager:
 
 	def test_notify_reasons(self, monkeypatch: pytest.MonkeyPatch) -> None:
 		"""测试通知原因生成"""
-		monkeypatch.setenv('NOTIFY_TRIGGERS', 'success,failed')
+		monkeypatch.setenv('NOTIFY_TRIGGERS', 'success,failed,balance_changed')
 		manager = NotifyTriggerManager()
 
 		reasons = manager.get_notify_reasons(
 			has_success=True,
 			has_failed=True,
-			has_balance_changed=False,
+			has_balance_changed=True,
 			is_first_run=False,
 		)
 
 		assert '账号成功' in reasons
 		assert '账号失败' in reasons
+		assert '余额变化' in reasons

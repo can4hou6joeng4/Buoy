@@ -68,7 +68,7 @@ class TestCheckinFlow:
 		accounts_env(STANDARD_ACCOUNTS)
 		config_env_setter('dingtalk', 'https://mock.dingtalk.com/hook')
 
-		# 第一次运行（首次运行，会发送通知）
+		# 第一次运行（首次运行但无历史变动，不发送通知）
 		app_first = Application()
 		app_first.balance_manager.balance_hash_file = tmp_path / 'balance_hash.txt'
 
@@ -79,10 +79,14 @@ class TestCheckinFlow:
 				MockHttpClient.setup(stack, tracker_first.get_handler, tracker_first.post_handler)
 
 				with patch('notif.notification_kit.NotificationKit.push_message', new=AsyncMock()) as mock_push_first:
-					with pytest.raises(SystemExit):
-						await app_first.run()
+					with patch(
+						'notif.notification_kit.NotificationKit.push_raw_message', new=AsyncMock()
+					) as mock_raw_first:
+						with pytest.raises(SystemExit):
+							await app_first.run()
 
-		assert mock_push_first.await_count == 1, '首次运行应该发送通知'
+		assert mock_push_first.await_count == 0, '首次运行但无实际余额变化时不应该发送通知'
+		assert mock_raw_first.await_count == 0, '首次运行不应该发送额外原始通知'
 
 		# 第二次运行（余额未变化，不发送通知）
 		app_second = Application()
@@ -95,10 +99,14 @@ class TestCheckinFlow:
 				MockHttpClient.setup(stack, tracker_second.get_handler, tracker_second.post_handler)
 
 				with patch('notif.notification_kit.NotificationKit.push_message', new=AsyncMock()) as mock_push_second:
-					with pytest.raises(SystemExit):
-						await app_second.run()
+					with patch(
+						'notif.notification_kit.NotificationKit.push_raw_message', new=AsyncMock()
+					) as mock_raw_second:
+						with pytest.raises(SystemExit):
+							await app_second.run()
 
 		assert mock_push_second.await_count == 0, '余额未变化不应该发送通知'
+		assert mock_raw_second.await_count == 0, '余额未变化不应该发送额外原始通知'
 
 		# 第三次运行（余额变化，发送通知）
 		app_third = Application()
@@ -123,16 +131,21 @@ class TestCheckinFlow:
 				MockHttpClient.setup(stack, get_handler_changed, MockHttpClient.post_success_handler)
 
 				with patch('notif.notification_kit.NotificationKit.push_message', new=AsyncMock()) as mock_push_third:
-					with pytest.raises(SystemExit):
-						await app_third.run()
+					with patch(
+						'notif.notification_kit.NotificationKit.push_raw_message', new=AsyncMock()
+					) as mock_raw_third:
+						with pytest.raises(SystemExit):
+							await app_third.run()
 
 		assert mock_push_third.await_count == 1, '余额变化应该发送通知'
+		assert mock_raw_third.await_count == 0, '余额变化应该合并为一条通知，不应发送额外原始通知'
 
 		# 测试不同的触发器场景
 		trigger_scenarios = [
 			('never', False, '不应该发送通知'),
 			('always', True, '应该总是发送通知'),
 			('success', True, '有成功账号应该发送通知'),
+			('failed', False, '无失败账号时不应该发送通知'),
 		]
 
 		for triggers, should_notify, reason in trigger_scenarios:
@@ -153,9 +166,10 @@ class TestCheckinFlow:
 			assert mock_push.await_count == expected_count, f'触发器 {triggers}: {reason}'
 
 	@pytest.mark.asyncio
-	async def test_partial_and_full_failure_scenarios(self, accounts_env, tmp_path):
+	async def test_partial_and_full_failure_scenarios(self, accounts_env, tmp_path, monkeypatch):
 		"""测试部分失败和全部失败场景"""
 		accounts_env(STANDARD_ACCOUNTS)
+		monkeypatch.setenv('NOTIFY_TRIGGERS', 'failed')
 
 		# 测试部分失败
 		app_partial = Application()

@@ -4,7 +4,7 @@ from enum import Enum
 class NotifyTrigger(Enum):
 	"""通知触发器枚举"""
 
-	# 余额变化（包括首次运行）
+	# 检测到实际余额变化
 	BALANCE_CHANGED = 'balance_changed'
 
 	# 任意账号失败

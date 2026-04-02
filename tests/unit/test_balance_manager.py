@@ -1,4 +1,5 @@
 import hashlib
+import json
 from pathlib import Path
 
 from core.balance_manager import BalanceManager
@@ -43,8 +44,8 @@ class TestBalanceManager:
 
 		# 测试保存和加载
 		test_data = {
-			'user1_hash': 'balance1_hash',
-			'user2_hash': 'balance2_hash',
+			'user1_hash': {'hash': 'balance1_hash', 'quota': 25.0, 'used': 5.0},
+			'user2_hash': {'hash': 'balance2_hash'},
 		}
 		manager.save_balance_hash(test_data)
 		assert balance_file.exists()
@@ -59,12 +60,17 @@ class TestBalanceManager:
 		assert nested_file.exists()
 
 		# 测试覆盖写入
-		new_data = {'user3_hash': 'balance3_hash'}
+		new_data = {'user3_hash': {'hash': 'balance3_hash', 'quota': 30.0, 'used': 8.0}}
 		manager.save_balance_hash(new_data)
 		loaded_new_data = manager.load_balance_hash()
 		assert loaded_new_data == new_data
 		assert loaded_new_data is not None
 		assert 'user1_hash' not in loaded_new_data  # 旧数据被覆盖
+
+		# 测试兼容旧格式（值为字符串）
+		legacy_data = {'legacy_user': 'legacy_hash'}
+		balance_file.write_text(json.dumps(legacy_data), encoding='utf-8')
+		assert manager.load_balance_hash() == {'legacy_user': {'hash': 'legacy_hash'}}
 
 	def test_file_error_handling(self, tmp_path: Path):
 		"""测试文件读写异常处理"""
@@ -85,7 +91,14 @@ class TestBalanceManager:
 		assert balance_file.exists()
 
 		# 测试超大 JSON（边界测试）
-		large_data = {f'user_{i}': f'hash_{i}' * 100 for i in range(1000)}
+		large_data = {
+			f'user_{i}': {
+				'hash': f'hash_{i}' * 100,
+				'quota': float(i),
+				'used': float(i) / 10,
+			}
+			for i in range(1000)
+		}
 		manager.save_balance_hash(large_data)
 		loaded_large = manager.load_balance_hash()
 		assert loaded_large == large_data

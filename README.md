@@ -95,6 +95,8 @@ jobs:
           dingtalk-notif-config: ${{ secrets.DINGTALK_NOTIF_CONFIG }}
           email-notif-config: ${{ secrets.EMAIL_NOTIF_CONFIG }}
           telegram-notif-config: ${{ secrets.TELEGRAM_NOTIF_CONFIG }}
+          # 可选：通知触发条件，默认仅在实际余额变动时通知
+          notify-triggers: balance_changed
           # ... 其他通知配置
 ```
 
@@ -174,24 +176,28 @@ ANYROUTER_ACCOUNT_12427_ALICE='{"cookies": { "session": "new_session" }}'  # ✅
   - [.env.test.example](.env.test.example) 中的简单示例
   - [自定义通知模板](#自定义通知模板)，展示自定义模板的使用方法，并展示了一些配置后的示例效果
 
-您可以在 `Environment secrets` 中添加相应的配置。如下图所示：
+您可以在 `Environment secrets` 中添加相应的敏感配置。如下图所示：
 <img src="/assets/github-env-notif-config-example.png" alt="环境变量配置示例" width="500" style="max-width: 100%;" />
+
+像 `NOTIFY_TRIGGERS` 这种非敏感配置，更推荐使用仓库变量（`Settings > Secrets and variables > Actions > Variables`）管理。
 
 #### 通知时机
 
 从 [v1.3.1] 版本开始，支持通过环境变量 `NOTIFY_TRIGGERS` 设置通知的触发时机。取值范围参考 [`NotifyTrigger`](src/notif/models/notify_trigger.py)：
-- `balance_changed`：余额变化（包括首次运行）
+- `balance_changed`：检测到实际余额变化
 - `failed`：任意账号签到失败
 - `success`：任意账号签到成功
 - `always`：总是发送
 - `never`：从不发送
 
-[默认配置](src/notif/trigger_manager.py#L11)为 `NOTIFY_TRIGGERS='balance_changed,failed'`，即余额变化（包括初次运行）时，以及任意账号签到失败时，将发送通知。
+[默认配置](src/notif/trigger_manager.py#L11)为 `NOTIFY_TRIGGERS='balance_changed'`，即只有在检测到实际余额变化时才发送通知。
+
+Fork 本仓库内置的 workflow 默认读取仓库变量 `NOTIFY_TRIGGERS`，若未配置则回退到 `balance_changed`。您也可以在 Composite Action 中通过 `notify-triggers` 输入覆盖默认值。
 
 您可通过设置该环境变量达到自定义通知时机的目的，比如将 `NOTIFY_TRIGGERS` 设置为 `failed`，则只有在签到失败时才会发送通知，可配合[自定义消息模板](#自定义通知模板)实现仅查看报错信息。
 
 <details>
-<summary>v1.3.1 以下版本时，通知触发时机为：</summary>
+<summary>旧版本（本次变更前）默认通知时机为：</summary>
 
 - 首次运行时
 - 余额发生变化时
@@ -255,7 +261,7 @@ ANYROUTER_ACCOUNT_12427_ALICE='{"cookies": { "session": "new_session" }}'  # ✅
 - `timestamp`: 执行时间
 - `timezone`: 时区（[v1.4.0] 版本起可用）
 - `stats`: 统计数据（`success_count`, `failed_count`, `total_count`）
-- `accounts`: 所有账号的结果列表（`name`, `status`, `quota`, `used`, `balance_changed`, `error`）
+- `accounts`: 所有账号的结果列表（`name`, `status`, `quota`, `used`, `balance_changed`, `prev_quota`, `prev_used`, `quota_delta`, `used_delta`, `quota_delta_display`, `used_delta_display`, `error`）
 
 账号状态分组：
 - `success_accounts`: 成功账号列表
@@ -278,7 +284,14 @@ ANYROUTER_ACCOUNT_12427_ALICE='{"cookies": { "session": "new_session" }}'  # ✅
 - `all_balance_changed`: 所有账号余额都发生变化
 - `all_balance_unchanged`: 所有账号余额都未发生变化
 
+其中，`balance_changed_accounts` 中的账号还会附带以下字段，便于在模板中直接展示金额变化：
+- `prev_quota` / `prev_used`: 变动前的额度 / 已使用金额
+- `quota_delta` / `used_delta`: 本次与上次相比的数值变化
+- `quota_delta_display` / `used_delta_display`: 已带正负号的展示值（如 `+5.0`、`-2.5`）
+
 以上变量在 `title` 和 `content` 模板中**均可使用**。
+
+Telegram 默认模板现已将“当前余额”和“金额变化”汇总在同一条消息中，避免余额变动时重复发送两条提醒。
 
 **重要说明**：
 

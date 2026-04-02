@@ -24,6 +24,12 @@ class Application:
 	# 默认时间戳格式
 	DEFAULT_TIMESTAMP_FORMAT = '%Y-%m-%d %H:%M:%S'
 
+	@staticmethod
+	def _format_signed_amount(amount: float) -> str:
+		"""格式化带正负号的金额展示值"""
+		text = str(amount)
+		return text if text.startswith('-') else f'+{text}'
+
 	def __init__(self):
 		"""初始化应用及所有服务"""
 		# 初始化各个功能模块
@@ -81,6 +87,10 @@ class Application:
 				balance_changed = None
 				prev_quota = None
 				prev_used = None
+				quota_delta = None
+				used_delta = None
+				quota_delta_display = None
+				used_delta_display = None
 				error = None
 
 				if success:
@@ -124,12 +134,18 @@ class Application:
 							has_any_balance_changed = True
 							prev_quota = last_data.get('quota')
 							prev_used = last_data.get('used')
+							if prev_quota is not None:
+								quota_delta = current_quota - prev_quota
+								quota_delta_display = self._format_signed_amount(quota_delta)
+							if prev_used is not None:
+								used_delta = current_used - prev_used
+								used_delta_display = self._format_signed_amount(used_delta)
 							logger.notify('余额发生变化，将发送通知', safe_account_name)
 						else:
 							# 余额未变化
 							balance_changed = False
 					else:
-						# 首次运行，无历史数据
+						# 无历史数据时仅记录当前余额，不视为变动通知
 						balance_changed = False
 
 					# 设置余额信息
@@ -150,6 +166,10 @@ class Application:
 					balance_changed=balance_changed,
 					prev_quota=prev_quota,
 					prev_used=prev_used,
+					quota_delta=quota_delta,
+					used_delta=used_delta,
+					quota_delta_display=quota_delta_display,
+					used_delta_display=used_delta_display,
 					error=error,
 				)
 
@@ -248,29 +268,6 @@ class Application:
 			logger.notify('通知已发送')
 		elif not account_results:
 			logger.info('没有账号数据，跳过通知')
-
-		# 余额变动时发送额外的专属通知（独立于常规通知触发条件）
-		if has_any_balance_changed and account_results:
-			changed = [acc for acc in account_results if acc.balance_changed]
-			if changed:
-				tz_name = os.getenv('TZ') or self.DEFAULT_TIMEZONE
-				try:
-					tz = ZoneInfo(tz_name)
-				except Exception:
-					tz = ZoneInfo(self.DEFAULT_TIMEZONE)
-				ts_fmt = os.getenv('TIMESTAMP_FORMAT') or self.DEFAULT_TIMESTAMP_FORMAT
-				ts = datetime.now(tz).strftime(ts_fmt)
-
-				lines = []
-				for acc in changed:
-					lines.append(f'📊 {acc.name}')
-					if acc.prev_quota is not None and acc.prev_used is not None:
-						lines.append(f'  变动前：额度 ${acc.prev_quota}，已用 ${acc.prev_used}')
-					lines.append(f'  变动后：额度 ${acc.quota}，已用 ${acc.used}')
-					lines.append('')
-				lines.append(f'⏰ {ts}')
-				await self.notification_kit.push_raw_message('💰 余额变动提醒', '\n'.join(lines))
-				logger.notify('余额变动通知已发送')
 
 		# 日志总结
 		logger.info(

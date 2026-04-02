@@ -231,3 +231,34 @@ class TestNotificationKit:
 		for flag_name, expected_value in expected_flags.items():
 			actual_value = context.get(flag_name)
 			assert actual_value == expected_value, f'{flag_name} 应该是 {expected_value}, 实际是 {actual_value}'
+
+	def test_balance_change_template_rendering(
+		self,
+		clean_notification_env: None,
+	) -> None:
+		"""测试余额变动模板可正确访问变动前后金额与 delta 展示值"""
+		kit = NotificationKit()
+		data = build_notification_data([
+			build_account_result(
+				name='账号 1',
+				quota=30.0,
+				used=10.0,
+				balance_changed=True,
+				prev_quota=25.0,
+				prev_used=5.0,
+				quota_delta=5.0,
+				used_delta=5.0,
+				quota_delta_display='+5.0',
+				used_delta_display='+5.0',
+			)
+		])
+		context = kit._build_context_data(data)
+		template = NotificationTemplate(
+			title='{% if has_balance_changed %}AnyRouter 余额变动提醒{% else %}AnyRouter 签到提醒{% endif %}',
+			content='{% for account in balance_changed_accounts %}{{ account.name }}|{{ account.prev_quota }}|{{ account.quota }}|{{ account.quota_delta_display }}|{{ account.used_delta_display }}{% endfor %}',
+		)
+
+		rendered_title, rendered_content = kit._render_template(template, context)
+
+		assert rendered_title == 'AnyRouter 余额变动提醒'
+		assert rendered_content == '账号 1|25.0|30.0|+5.0|+5.0'

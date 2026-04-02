@@ -158,9 +158,10 @@ class TestErrorHandling:
 		assert exc_info.value.code == 0, f'{description}: 配置错误时应该正常退出'
 
 	@pytest.mark.asyncio
-	async def test_account_execution_exception(self, accounts_env, tmp_path):
+	async def test_account_execution_exception(self, accounts_env, tmp_path, monkeypatch):
 		"""测试账号执行过程中的意外异常"""
 		accounts_env(SINGLE_ACCOUNT)
+		monkeypatch.setenv('NOTIFY_TRIGGERS', 'failed')
 		app = Application()
 		app.balance_manager.balance_hash_file = tmp_path / 'hash_exception.txt'
 

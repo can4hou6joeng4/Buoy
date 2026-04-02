@@ -38,6 +38,10 @@ inputs:
   telegram-notif-config:
     description: 'Telegram 通知配置'
     required: false
+  notify-triggers:
+    description: '通知触发条件'
+    required: false
+    default: balance_changed
 
 runs:
   using: 'composite'
@@ -81,4 +85,5 @@ runs:
         WECOM_NOTIF_CONFIG: ${{ inputs.wecom-notif-config }}
         BARK_NOTIF_CONFIG: ${{ inputs.bark-notif-config }}
         TELEGRAM_NOTIF_CONFIG: ${{ inputs.telegram-notif-config }}
+        NOTIFY_TRIGGERS: ${{ inputs.notify-triggers }}
       run: mise run checkin

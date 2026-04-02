@@ -31,9 +31,9 @@
   // 【可选】自定义通知模板（不设置，或为空时使用下方默认模板）
   "template": {
     // 通知标题，不设置，或为空字符串时不展示
-    "title": "AnyRouter 签到提醒",
+    "title": "{% if has_balance_changed %}AnyRouter 余额变动提醒{% else %}AnyRouter 签到提醒{% endif %}",
 
     // 通知内容
-    "content": "{# Telegram 通知模板 #}{% if timestamp %}<b>⏰ 执行时间</b>\n{{ timestamp }}\n\n{% endif %}{% if success_accounts %}{% for account in success_accounts %}<b>💰 {{ account.name }}</b>\n当前额度：${{ account.quota }}，已使用：${{ account.used }}\n\n{% endfor %}{% endif %}{% if failed_accounts %}{% for account in failed_accounts %}<b>❌ {{ account.name }}</b>\n异常：{{ account.error }}\n\n{% endfor %}{% endif %}<b>📊 签到结果统计</b>\n✅ 成功：{{ stats.success_count }}/{{ stats.total_count }}\n❌ 失败：{{ stats.failed_count }}/{{ stats.total_count }}\n\n{% if all_success %}<b>🎉 全部账号签到成功！</b>{% else %}{% if partial_success %}<b>⚠️ 部分账号签到成功</b>{% else %}<b>🚫 全部账号签到失败</b>{% endif %}{% endif %}",
+    "content": "{# Telegram 通知模板 #}{% if timestamp %}<b>⏰ 执行时间</b>\n{{ timestamp }}{% if timezone %} {{ timezone }}{% endif %}\n\n{% endif %}{% if has_balance_changed %}<b>💹 余额变动汇总</b>\n{% for account in balance_changed_accounts %}<b>• {{ account.name }}</b>\n当前额度：${{ account.quota }}（{{ account.quota_delta_display }}）\n当前已用：${{ account.used }}（{{ account.used_delta_display }}）\n变动前：额度 ${{ account.prev_quota }}，已用 ${{ account.prev_used }}\n\n{% endfor %}{% else %}{% if success_accounts %}<b>💰 当前余额</b>\n{% for account in success_accounts %}<b>• {{ account.name }}</b>\n当前额度：${{ account.quota }}，已使用：${{ account.used }}\n\n{% endfor %}{% endif %}{% endif %}{% if failed_accounts %}<b>❌ 失败账号</b>\n{% for account in failed_accounts %}• {{ account.name }}：{{ account.error }}\n{% endfor %}\n\n{% endif %}<b>📊 签到结果统计</b>\n✅ 成功：{{ stats.success_count }}/{{ stats.total_count }}\n❌ 失败：{{ stats.failed_count }}/{{ stats.total_count }}",
   },
 }

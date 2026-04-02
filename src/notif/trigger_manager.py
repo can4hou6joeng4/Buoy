@@ -7,8 +7,8 @@ from tools.logger import logger
 class NotifyTriggerManager:
 	"""通知触发器管理器"""
 
-	# 默认触发器：余额变化或失败时发送通知
-	DEFAULT_TRIGGERS = {NotifyTrigger.BALANCE_CHANGED, NotifyTrigger.FAILED}
+	# 默认触发器：仅在实际余额变化时发送通知
+	DEFAULT_TRIGGERS = {NotifyTrigger.BALANCE_CHANGED}
 	ENV_KEY = 'NOTIFY_TRIGGERS'
 
 	def __init__(self):
@@ -29,7 +29,7 @@ class NotifyTriggerManager:
 			has_success: 是否有成功的账号
 			has_failed: 是否有失败的账号
 			has_balance_changed: 是否有余额变化
-			is_first_run: 是否是首次运行
+			is_first_run: 是否是首次运行（保留参数，供其他触发器扩展使用）
 
 		Returns:
 			是否应该发送通知
@@ -44,8 +44,8 @@ class NotifyTriggerManager:
 
 		# 检查是否满足任一触发条件（OR 关系）
 		if NotifyTrigger.BALANCE_CHANGED in self.triggers:
-			# 余额变化包括首次运行或实际余额变化
-			if is_first_run or has_balance_changed:
+			# 仅在检测到实际余额变化时发送通知
+			if has_balance_changed:
 				return True
 
 		if NotifyTrigger.FAILED in self.triggers and has_failed:
@@ -70,15 +70,12 @@ class NotifyTriggerManager:
 			has_success: 是否有成功的账号
 			has_failed: 是否有失败的账号
 			has_balance_changed: 是否有余额变化
-			is_first_run: 是否是首次运行
+			is_first_run: 是否是首次运行（保留参数，供其他触发器扩展使用）
 
 		Returns:
 			触发原因列表
 		"""
 		reasons = []
-
-		if is_first_run and NotifyTrigger.BALANCE_CHANGED in self.triggers:
-			reasons.append('首次运行')
 
 		if has_balance_changed and NotifyTrigger.BALANCE_CHANGED in self.triggers:
 			reasons.append('余额变化')
