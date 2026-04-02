@@ -262,3 +262,94 @@ class TestNotificationKit:
 
 		assert rendered_title == 'AnyRouter 余额变动提醒'
 		assert rendered_content == '账号 1|25.0|30.0|+5.0|+5.0'
+
+	def test_change_account_groups_for_template(
+		self,
+		clean_notification_env: None,
+	) -> None:
+		"""测试模板上下文中可区分总额度变化与已使用变化的账号分组"""
+		kit = NotificationKit()
+		data = build_notification_data([
+			build_account_result(
+				name='额度变化账号',
+				quota=35.0,
+				used=5.0,
+				balance_changed=True,
+				prev_quota=30.0,
+				prev_used=5.0,
+				quota_delta=5.0,
+				used_delta=0.0,
+				quota_delta_display='+5.0',
+				used_delta_display='+0.0',
+			),
+			build_account_result(
+				name='已用变化账号',
+				quota=35.0,
+				used=8.0,
+				balance_changed=True,
+				prev_quota=35.0,
+				prev_used=5.0,
+				quota_delta=0.0,
+				used_delta=3.0,
+				quota_delta_display='+0.0',
+				used_delta_display='+3.0',
+			),
+		])
+
+		context = kit._build_context_data(data)
+
+		assert context['has_balance_changed'] is True
+		assert context['has_quota_changed'] is True
+		assert context['has_used_changed'] is True
+		assert [acc.name for acc in context['quota_changed_accounts']] == ['额度变化账号']
+		assert [acc.name for acc in context['used_changed_accounts']] == ['已用变化账号']
+
+	def test_default_telegram_template_includes_signin_and_change_sections(
+		self,
+		monkeypatch: pytest.MonkeyPatch,
+		clean_notification_env: None,
+	) -> None:
+		"""测试默认 Telegram 模板会同时展示签到成功与额度变化摘要"""
+		monkeypatch.setenv(
+			'TELEGRAM_NOTIF_CONFIG',
+			'{"bot_token": "test_token", "chat_id": "123456"}',
+		)
+		kit = NotificationKit()
+		assert kit.telegram_config is not None
+		assert kit.telegram_config.template is not None
+
+		data = build_notification_data([
+			build_account_result(
+				name='账号 A',
+				quota=30.0,
+				used=8.0,
+				balance_changed=True,
+				prev_quota=25.0,
+				prev_used=5.0,
+				quota_delta=5.0,
+				used_delta=3.0,
+				quota_delta_display='+5.0',
+				used_delta_display='+3.0',
+			),
+			build_account_result(
+				name='账号 B',
+				quota=20.0,
+				used=2.0,
+				balance_changed=False,
+			),
+			build_account_result(name='账号 C', status='failed', error='登录失效'),
+		])
+		context = kit._build_context_data(data)
+
+		rendered_title, rendered_content = kit._render_template(kit.telegram_config.template, context)
+
+		assert rendered_title == 'AnyRouter 签到与额度变动提醒'
+		assert '<b>✅ 本次签到成功账号</b>' in rendered_content
+		assert '<b>• 账号 A</b>' in rendered_content
+		assert '<b>• 账号 B</b>' in rendered_content
+		assert '<b>💹 总额度发生变化</b>' in rendered_content
+		assert '额度变化：+5.0' in rendered_content
+		assert '<b>📈 已使用额度发生变化</b>' in rendered_content
+		assert '已用变化：+3.0' in rendered_content
+		assert '<b>❌ 失败账号</b>' in rendered_content
+		assert '• 账号 C：登录失效' in rendered_content
