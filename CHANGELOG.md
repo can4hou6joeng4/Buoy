@@ -26,6 +26,7 @@
 * Telegram 默认模板调整为在一条消息中同时汇总当前余额与金额变化。
 * Fork workflow 的 `NOTIFY_TRIGGERS` 配置改为优先读取仓库变量，并在未配置时默认回退到 `balance_changed`。
 * Composite Action 新增 `notify-triggers` 输入，便于调用方显式控制通知触发时机。
+* GitHub Actions 中升级 `checkout`、`mise-action`、`pyright-action`，并将 Ruff 检查切换为本地命令执行，以消除 Node.js 20 弃用 warning 且尽量保持现有检查行为不变。
 
 ---
 

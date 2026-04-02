@@ -27,23 +27,19 @@ jobs:
       PYTHONIOENCODING: utf-8
     steps:
       - name: 📥 检出代码
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: 🚀 设置开发环境
         uses: ./.github/actions/setup-environment
 
       - name: 🎨 Ruff 格式化检查
-        uses: astral-sh/ruff-action@v3
-        with:
-          args: format --check --preview
+        run: mise exec -- python -m ruff format --check --preview
 
       - name: 🔍 Ruff 代码规范检查
-        uses: astral-sh/ruff-action@v3
-        with:
-          args: check
+        run: mise exec -- python -m ruff check
 
       - name: 🔎 类型检查
-        uses: jakebailey/pyright-action@v2
+        uses: jakebailey/pyright-action@v3
         with:
           annotate: all
 
@@ -61,7 +57,7 @@ jobs:
       PYTHONIOENCODING: utf-8
     steps:
       - name: 📥 检出代码
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: 🚀 设置开发环境
         uses: ./.github/actions/setup-environment
@@ -82,7 +78,7 @@ jobs:
 
       - name: 📊 上传覆盖率到 Codecov
         if: always()
-        uses: codecov/codecov-action@v5
+        uses: codecov/codecov-action@v6
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           files: ./coverage.xml
