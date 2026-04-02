@@ -268,6 +268,14 @@ class NotificationKit:
 			acc for acc in success_accounts
 			if acc.balance_changed is False
 		]  # fmt: skip
+		quota_changed_accounts = [
+			acc for acc in balance_changed_accounts
+			if acc.quota_delta not in (None, 0)
+		]  # fmt: skip
+		used_changed_accounts = [
+			acc for acc in balance_changed_accounts
+			if acc.used_delta not in (None, 0)
+		]  # fmt: skip
 
 		# 计算可判断余额的成功账号数量（排除 balance_changed=None 的账号）
 		balance_determinable_count = len(balance_changed_accounts) + len(balance_unchanged_accounts)
@@ -290,8 +298,12 @@ class NotificationKit:
 			# 余额变化相关的变量（只包含成功的账号）
 			'balance_changed_accounts': balance_changed_accounts,
 			'balance_unchanged_accounts': balance_unchanged_accounts,
+			'quota_changed_accounts': quota_changed_accounts,
+			'used_changed_accounts': used_changed_accounts,
 			'has_balance_changed': len(balance_changed_accounts) > 0,
 			'has_balance_unchanged': len(balance_unchanged_accounts) > 0,
+			'has_quota_changed': len(quota_changed_accounts) > 0,
+			'has_used_changed': len(used_changed_accounts) > 0,
 			'all_balance_changed': balance_determinable_count > 0 and len(balance_unchanged_accounts) == 0,
 			'all_balance_unchanged': balance_determinable_count > 0 and len(balance_changed_accounts) == 0,
 		}
