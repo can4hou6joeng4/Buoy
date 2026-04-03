@@ -76,9 +76,9 @@
   // 【可选】自定义通知模板（不设置，或为空时使用下方默认模板）
   "template": {
     // 通知标题，不设置，或为空字符串时不展示
-    "title": "AnyRouter 签到提醒",
+    "title": "{% if has_balance_changed %}AnyRouter 签到与额度变动提醒{% else %}AnyRouter 签到提醒{% endif %}",
 
     // 通知内容
-    "content": "{# Bark 通知模板 #}{% if timestamp %}[TIME] 执行时间：{{ timestamp }}\n\n{% endif %}{% if success_accounts %}{% for account in success_accounts %}[BALANCE] {{ account.name }}\n💰 当前额度：${{ account.quota }}，已使用：${{ account.used }}\n{% endfor %}{% endif %}{% if failed_accounts %}{% for account in failed_accounts %}[FAIL] {{ account.name }} 异常：{{ account.error }}\n{% endfor %}{% endif %}\n[STATS] 签到结果统计：\n[SUCCESS] 成功：{{ stats.success_count }}/{{ stats.total_count }}\n[FAIL] 失败：{{ stats.failed_count }}/{{ stats.total_count }}\n{% if all_success %}[SUCCESS] 全部账号签到成功！{% else %}{% if partial_success %}[WARN] 部分账号签到成功{% else %}[ERROR] 全部账号签到失败{% endif %}{% endif %}",
+    "content": "{# Bark 通知模板 #}{% if timestamp %}⏰ 执行时间：{{ timestamp }}{% if timezone %} {{ timezone }}{% endif %}\n\n{% endif %}{% if success_accounts %}✅ 签到成功账号\n{% for account in success_accounts %}• {{ account.name }}\n💰 当前额度：${{ account.quota }}，已使用：${{ account.used }}\n\n{% endfor %}{% endif %}{% if quota_changed_accounts %}💹 总额度发生变化\n{% for account in quota_changed_accounts %}• {{ account.name }}\n额度变化：{{ account.quota_delta_display }}\n变动前：${{ account.prev_quota }} → 当前：${{ account.quota }}\n\n{% endfor %}{% endif %}{% if used_changed_accounts %}📈 已使用额度发生变化\n{% for account in used_changed_accounts %}• {{ account.name }}\n已用变化：{{ account.used_delta_display }}\n变动前：${{ account.prev_used }} → 当前：${{ account.used }}\n\n{% endfor %}{% endif %}{% if failed_accounts %}❌ 失败账号\n{% for account in failed_accounts %}• {{ account.name }}：{{ account.error }}\n{% endfor %}\n{% endif %}📊 签到结果统计\n✅ 成功：{{ stats.success_count }}/{{ stats.total_count }}\n❌ 失败：{{ stats.failed_count }}/{{ stats.total_count }}\n{% if all_success %}🎉 全部账号签到成功！{% else %}{% if partial_success %}⚠️ 部分账号签到成功{% else %}🚫 全部账号签到失败{% endif %}{% endif %}",
   },
 }
