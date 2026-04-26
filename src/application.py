@@ -213,29 +213,39 @@ class Application:
 			all_balance_changed=all_balance_changed,
 			is_first_run=is_first_run,
 		)
+		trigger_values = self.notify_trigger_manager.get_trigger_values()
+		decision_reasons = (
+			self.notify_trigger_manager.get_notify_reasons(
+				has_success=success_count > 0,
+				has_failed=has_any_failed,
+				has_balance_changed=has_any_balance_changed,
+				all_balance_changed=all_balance_changed,
+				is_first_run=is_first_run,
+			)
+			if need_notify
+			else self.notify_trigger_manager.get_skip_reasons(
+				has_success=success_count > 0,
+				has_failed=has_any_failed,
+				has_balance_changed=has_any_balance_changed,
+				all_balance_changed=all_balance_changed,
+				is_first_run=is_first_run,
+			)
+		)
 
 		# 记录通知决策的原因
 		if need_notify:
 			if NotifyTrigger.ALWAYS in self.notify_trigger_manager.triggers:
 				logger.notify('配置了 always 触发器，将发送通知')
 			else:
-				reasons = self.notify_trigger_manager.get_notify_reasons(
-					has_success=success_count > 0,
-					has_failed=has_any_failed,
-					has_balance_changed=has_any_balance_changed,
-					all_balance_changed=all_balance_changed,
-					is_first_run=is_first_run,
-				)
-
-				if reasons:
-					logger.notify(f'检测到 {" 和 ".join(reasons)}，将发送通知')
+				if decision_reasons:
+					logger.notify(f'检测到 {" 和 ".join(decision_reasons)}，将发送通知')
 				else:
 					logger.notify('满足通知条件，将发送通知')
 		else:
 			if NotifyTrigger.NEVER in self.notify_trigger_manager.triggers:
 				logger.info('配置了 never 触发器，跳过通知')
 			else:
-				logger.info('未满足通知触发条件，跳过通知')
+				logger.info(f'未满足通知触发条件（{"；".join(decision_reasons)}），跳过通知')
 
 		# 保存当前余额 hash 字典
 		if current_balance_hash_dict:
@@ -304,6 +314,9 @@ class Application:
 			success_count=success_count,
 			total_count=total_count,
 			account_results=summary_results,
+			notify_sent=need_notify,
+			notify_triggers=trigger_values,
+			notify_reasons=decision_reasons,
 		)
 
 		# 设置退出码
