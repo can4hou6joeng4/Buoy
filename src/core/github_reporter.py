@@ -25,6 +25,9 @@ class GitHubReporter:
 		success_count: int,
 		total_count: int,
 		account_results: list[AccountResult],
+		notify_sent: bool,
+		notify_triggers: list[str],
+		notify_reasons: list[str],
 	):
 		"""
 		生成 GitHub Actions Step Summary
@@ -33,6 +36,9 @@ class GitHubReporter:
 			success_count: 成功数量
 			total_count: 总数量
 			account_results: 账号结果列表
+			notify_sent: 本次是否发送通知
+			notify_triggers: 当前生效的通知触发器
+			notify_reasons: 本次通知发送/跳过的原因
 		"""
 		# 检查是否在 GitHub Actions 环境中运行
 		summary_file = os.getenv(self.ENV_GITHUB_STEP_SUMMARY)
@@ -73,6 +79,13 @@ class GitHubReporter:
 			lines.append(f'- **执行时间**：{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}')
 			lines.append(f'- **成功比例**：{success_count}/{total_count}')
 			lines.append(f'- **失败比例**：{failed_count}/{total_count}')
+			lines.append('')
+
+			lines.append('### 通知决策')
+			lines.append(f'- **触发器配置**：`{", ".join(notify_triggers)}`')
+			lines.append(f'- **通知结果**：{"已发送" if notify_sent else "已跳过"}')
+			if notify_reasons:
+				lines.append(f'- **决策原因**：{"；".join(notify_reasons)}')
 			lines.append('')
 
 			# 成功账号表格

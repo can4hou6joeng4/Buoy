@@ -112,3 +112,55 @@ class TestNotifyTriggerManager:
 		assert '账号成功' in reasons
 		assert '账号失败' in reasons
 		assert '全部账号额度变化' in reasons
+
+	@pytest.mark.parametrize(
+		'triggers,has_success,has_failed,has_balance_changed,all_balance_changed,is_first_run,expected_reasons',
+		[
+			('never', True, False, False, False, False, ['配置了 never 触发器']),
+			('balance_changed', True, False, False, False, True, ['首次运行仅建立额度基线']),
+			('balance_changed', True, False, True, False, False, ['仅部分账号额度变化，未达到全部账号额度变化']),
+			('balance_changed', True, False, False, False, False, ['未检测到全部账号额度变化']),
+			('failed', True, False, False, False, False, ['未出现失败账号']),
+			('success', False, False, False, False, False, ['未出现成功账号']),
+			(
+				'success,failed,balance_changed',
+				True,
+				False,
+				True,
+				False,
+				False,
+				['仅部分账号额度变化，未达到全部账号额度变化', '未出现失败账号'],
+			),
+		],
+	)
+	def test_skip_reasons(
+		self,
+		monkeypatch: pytest.MonkeyPatch,
+		triggers: str,
+		has_success: bool,
+		has_failed: bool,
+		has_balance_changed: bool,
+		all_balance_changed: bool,
+		is_first_run: bool,
+		expected_reasons: list[str],
+	) -> None:
+		"""测试跳过通知的原因生成"""
+		monkeypatch.setenv('NOTIFY_TRIGGERS', triggers)
+		manager = NotifyTriggerManager()
+
+		reasons = manager.get_skip_reasons(
+			has_success=has_success,
+			has_failed=has_failed,
+			has_balance_changed=has_balance_changed,
+			all_balance_changed=all_balance_changed,
+			is_first_run=is_first_run,
+		)
+
+		assert reasons == expected_reasons
+
+	def test_trigger_values(self, monkeypatch: pytest.MonkeyPatch) -> None:
+		"""测试触发器值输出顺序稳定"""
+		monkeypatch.setenv('NOTIFY_TRIGGERS', 'success,failed,balance_changed')
+		manager = NotifyTriggerManager()
+
+		assert manager.get_trigger_values() == ['balance_changed', 'failed', 'success']

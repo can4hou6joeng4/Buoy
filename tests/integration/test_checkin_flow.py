@@ -55,6 +55,10 @@ class TestCheckinFlow:
 		assert summary_file.exists()
 		assert_file_content_contains(summary_file, '签到任务完成')
 		assert_file_content_contains(summary_file, '成功')
+		assert_file_content_contains(summary_file, '通知决策')
+		assert_file_content_contains(summary_file, '触发器配置')
+		assert_file_content_contains(summary_file, '已跳过')
+		assert_file_content_contains(summary_file, '首次运行仅建立额度基线')
 
 	@pytest.mark.asyncio
 	async def test_balance_change_detection_and_notify_triggers(

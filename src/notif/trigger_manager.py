@@ -92,6 +92,56 @@ class NotifyTriggerManager:
 
 		return reasons
 
+	def get_skip_reasons(
+		self,
+		has_success: bool,
+		has_failed: bool,
+		has_balance_changed: bool,
+		all_balance_changed: bool,
+		is_first_run: bool,
+	) -> list[str]:
+		"""
+		获取未发送通知时的原因列表
+
+		Args:
+			has_success: 是否有成功的账号
+			has_failed: 是否有失败的账号
+			has_balance_changed: 是否有余额变化
+			all_balance_changed: 是否所有账号都完成余额变化
+			is_first_run: 是否是首次运行
+
+		Returns:
+			跳过通知的原因列表
+		"""
+		reasons = []
+
+		if NotifyTrigger.NEVER in self.triggers:
+			reasons.append('配置了 never 触发器')
+			return reasons
+
+		if NotifyTrigger.BALANCE_CHANGED in self.triggers and not all_balance_changed:
+			if is_first_run:
+				reasons.append('首次运行仅建立额度基线')
+			elif has_balance_changed:
+				reasons.append('仅部分账号额度变化，未达到全部账号额度变化')
+			else:
+				reasons.append('未检测到全部账号额度变化')
+
+		if NotifyTrigger.FAILED in self.triggers and not has_failed:
+			reasons.append('未出现失败账号')
+
+		if NotifyTrigger.SUCCESS in self.triggers and not has_success:
+			reasons.append('未出现成功账号')
+
+		if not reasons:
+			reasons.append('未命中任何通知触发条件')
+
+		return reasons
+
+	def get_trigger_values(self) -> list[str]:
+		"""按固定顺序返回当前启用的触发器值"""
+		return [trigger.value for trigger in NotifyTrigger if trigger in self.triggers]
+
 	def _parse_triggers(self) -> set[NotifyTrigger]:
 		"""
 		解析通知触发器配置
