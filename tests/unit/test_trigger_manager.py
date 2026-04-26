@@ -44,29 +44,31 @@ class TestNotifyTriggerManager:
 		assert manager.triggers == expected_triggers
 
 	@pytest.mark.parametrize(
-		'triggers,has_success,has_failed,has_balance_changed,is_first_run,expected',
+		'triggers,has_success,has_failed,has_balance_changed,all_balance_changed,is_first_run,expected',
 		[
 			# never 触发器（优先级最高）
-			('never', True, True, True, True, False),
+			('never', True, True, True, True, True, False),
 			# always 触发器
-			('always', False, False, False, False, True),
-			('always', True, True, True, True, True),
+			('always', False, False, False, False, False, True),
+			('always', True, True, True, True, True, True),
 			# success 触发器
-			('success', True, False, False, False, True),
-			('success', False, False, False, False, False),
+			('success', True, False, False, False, False, True),
+			('success', False, False, False, False, False, False),
 			# failed 触发器
-			('failed', False, True, False, False, True),
-			('failed', False, False, False, False, False),
+			('failed', False, True, False, False, False, True),
+			('failed', False, False, False, False, False, False),
 			# balance_changed 触发器 - 首次运行但无实际余额变化
-			('balance_changed', True, False, False, True, False),
-			# balance_changed 触发器 - 余额变化
-			('balance_changed', True, False, True, False, True),
+			('balance_changed', True, False, False, False, True, False),
+			# balance_changed 触发器 - 仅部分账号余额变化，不发成功提醒
+			('balance_changed', True, False, True, False, False, False),
+			# balance_changed 触发器 - 全部账号余额变化
+			('balance_changed', True, False, True, True, False, True),
 			# balance_changed 触发器 - 余额未变化且非首次
-			('balance_changed', True, False, False, False, False),
+			('balance_changed', True, False, False, False, False, False),
 			# 多触发器组合（OR 关系）- 满足 success
-			('success,failed', True, False, False, False, True),
+			('success,failed', True, False, False, False, False, True),
 			# 多触发器组合（OR 关系）- 满足 failed
-			('success,failed', False, True, False, False, True),
+			('success,failed', False, True, False, False, False, True),
 		],
 	)
 	def test_decision_logic(
@@ -76,6 +78,7 @@ class TestNotifyTriggerManager:
 		has_success: bool,
 		has_failed: bool,
 		has_balance_changed: bool,
+		all_balance_changed: bool,
 		is_first_run: bool,
 		expected: bool,
 	) -> None:
@@ -87,6 +90,7 @@ class TestNotifyTriggerManager:
 			has_success=has_success,
 			has_failed=has_failed,
 			has_balance_changed=has_balance_changed,
+			all_balance_changed=all_balance_changed,
 			is_first_run=is_first_run,
 		)
 
@@ -101,9 +105,10 @@ class TestNotifyTriggerManager:
 			has_success=True,
 			has_failed=True,
 			has_balance_changed=True,
+			all_balance_changed=True,
 			is_first_run=False,
 		)
 
 		assert '账号成功' in reasons
 		assert '账号失败' in reasons
-		assert '余额变化' in reasons
+		assert '全部账号额度变化' in reasons
