@@ -184,17 +184,17 @@ ANYROUTER_ACCOUNT_12427_ALICE='{"cookies": { "session": "new_session" }}'  # ✅
 #### 通知时机
 
 从 [v1.3.1] 版本开始，支持通过环境变量 `NOTIFY_TRIGGERS` 设置通知的触发时机。取值范围参考 [`NotifyTrigger`](src/notif/models/notify_trigger.py)：
-- `balance_changed`：检测到实际余额变化
+- `balance_changed`：全部账号都检测到实际余额变化
 - `failed`：任意账号签到失败
 - `success`：任意账号签到成功
 - `always`：总是发送
 - `never`：从不发送
 
-[默认配置](src/notif/trigger_manager.py#L11)为 `NOTIFY_TRIGGERS='balance_changed'`，即只有在检测到实际余额变化时才发送通知。
+[默认配置](src/notif/trigger_manager.py#L11)为 `NOTIFY_TRIGGERS='balance_changed'`，即只有在全部账号都检测到实际余额变化时才发送成功提醒。
 
 Fork 本仓库内置的 workflow 默认读取仓库变量 `NOTIFY_TRIGGERS`，若未配置则回退到 `balance_changed`。您也可以在 Composite Action 中通过 `notify-triggers` 输入覆盖默认值。
 
-您可通过设置该环境变量达到自定义通知时机的目的，比如将 `NOTIFY_TRIGGERS` 设置为 `failed`，则只有在签到失败时才会发送通知，可配合[自定义消息模板](#自定义通知模板)实现仅查看报错信息。
+您可通过设置该环境变量达到自定义通知时机的目的，比如将 `NOTIFY_TRIGGERS` 设置为 `failed,balance_changed`，则会在账号失败时立即提醒，并在全部账号都完成额度变化后发送成功汇总。
 
 <details>
 <summary>旧版本（本次变更前）默认通知时机为：</summary>

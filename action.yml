@@ -39,7 +39,7 @@ inputs:
     description: 'Telegram 通知配置'
     required: false
   notify-triggers:
-    description: '通知触发条件'
+    description: '通知触发条件（balance_changed 表示全部账号都检测到实际余额变化）'
     required: false
     default: balance_changed
 

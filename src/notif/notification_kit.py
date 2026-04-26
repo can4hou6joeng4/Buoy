@@ -279,6 +279,19 @@ class NotificationKit:
 
 		# 计算可判断余额的成功账号数量（排除 balance_changed=None 的账号）
 		balance_determinable_count = len(balance_changed_accounts) + len(balance_unchanged_accounts)
+		all_success = data.stats.failed_count == 0
+		all_balance_changed = (
+			all_success
+			and len(success_accounts) > 0
+			and balance_determinable_count == len(success_accounts)
+			and len(balance_changed_accounts) == len(success_accounts)
+		)
+		all_balance_unchanged = (
+			all_success
+			and len(success_accounts) > 0
+			and balance_determinable_count == len(success_accounts)
+			and len(balance_unchanged_accounts) == len(success_accounts)
+		)
 
 		return {
 			'timestamp': data.timestamp,
@@ -292,7 +305,7 @@ class NotificationKit:
 			# 便利变量：布尔标志（使用 stats 进行判断，确保与 NotificationData 的属性一致）
 			'has_success': data.stats.success_count > 0,
 			'has_failed': data.stats.failed_count > 0,
-			'all_success': data.stats.failed_count == 0,
+			'all_success': all_success,
 			'all_failed': data.stats.success_count == 0,
 			'partial_success': data.stats.success_count > 0 and data.stats.failed_count > 0,
 			# 余额变化相关的变量（只包含成功的账号）
@@ -304,8 +317,8 @@ class NotificationKit:
 			'has_balance_unchanged': len(balance_unchanged_accounts) > 0,
 			'has_quota_changed': len(quota_changed_accounts) > 0,
 			'has_used_changed': len(used_changed_accounts) > 0,
-			'all_balance_changed': balance_determinable_count > 0 and len(balance_unchanged_accounts) == 0,
-			'all_balance_unchanged': balance_determinable_count > 0 and len(balance_changed_accounts) == 0,
+			'all_balance_changed': all_balance_changed,
+			'all_balance_unchanged': all_balance_unchanged,
 		}
 
 	def _load_email_config(self) -> EmailConfig | None:

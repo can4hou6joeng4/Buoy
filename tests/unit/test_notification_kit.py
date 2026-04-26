@@ -213,6 +213,18 @@ class TestNotificationKit:
 					'all_balance_unchanged': False,
 				},
 			),
+			# 存在失败账号时，即使成功账号都变化，也不应视为全部完成
+			(
+				[
+					build_account_result(name='账号 1', balance_changed=True),
+					build_account_result(name='账号 2', status='failed', error='错误'),
+				],
+				{
+					'has_balance_changed': True,
+					'has_failed': True,
+					'all_balance_changed': False,
+				},
+			),
 		],
 	)
 	def test_context_data_building(

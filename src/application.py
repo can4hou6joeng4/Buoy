@@ -140,7 +140,7 @@ class Application:
 							if prev_used is not None:
 								used_delta = current_used - prev_used
 								used_delta_display = self._format_signed_amount(used_delta)
-							logger.notify('余额发生变化，将发送通知', safe_account_name)
+							logger.notify('余额发生变化，纳入汇总判断', safe_account_name)
 						else:
 							# 余额未变化
 							balance_changed = False
@@ -196,12 +196,21 @@ class Application:
 				)
 				account_results.append(account_result)
 
+		# 成功提醒只在所有账号都完成额度变化时触发，失败提醒仍可单独触发
+		all_balance_changed = (
+			total_count > 0
+			and success_count == total_count
+			and len(account_results) == total_count
+			and all(result.balance_changed is True for result in account_results)
+		)
+
 		# 判断是否需要发送通知
 		is_first_run = last_balance_hash_dict is None
 		need_notify = self.notify_trigger_manager.should_notify(
 			has_success=success_count > 0,
 			has_failed=has_any_failed,
 			has_balance_changed=has_any_balance_changed,
+			all_balance_changed=all_balance_changed,
 			is_first_run=is_first_run,
 		)
 
@@ -214,6 +223,7 @@ class Application:
 					has_success=success_count > 0,
 					has_failed=has_any_failed,
 					has_balance_changed=has_any_balance_changed,
+					all_balance_changed=all_balance_changed,
 					is_first_run=is_first_run,
 				)
 
