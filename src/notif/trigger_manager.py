@@ -7,8 +7,12 @@ from tools.logger import logger
 class NotifyTriggerManager:
 	"""通知触发器管理器"""
 
-	# 默认触发器：仅在实际余额变化时发送通知
-	DEFAULT_TRIGGERS = {NotifyTrigger.BALANCE_CHANGED}
+	# 默认触发器：失败、任意余额变化、新增账号首次建立基线时发送通知
+	DEFAULT_TRIGGERS = {
+		NotifyTrigger.FAILED,
+		NotifyTrigger.BALANCE_CHANGED,
+		NotifyTrigger.FIRST_SEEN,
+	}
 	ENV_KEY = 'NOTIFY_TRIGGERS'
 
 	def __init__(self):
@@ -22,6 +26,7 @@ class NotifyTriggerManager:
 		has_balance_changed: bool,
 		all_balance_changed: bool,
 		is_first_run: bool,
+		has_first_seen: bool = False,
 	) -> bool:
 		"""
 		判断是否应该发送通知
@@ -31,6 +36,7 @@ class NotifyTriggerManager:
 			has_failed: 是否有失败的账号
 			has_balance_changed: 是否有余额变化
 			all_balance_changed: 是否所有账号都完成余额变化
+			has_first_seen: 是否有新增账号首次建立余额基线
 			is_first_run: 是否是首次运行（保留参数，供其他触发器扩展使用）
 
 		Returns:
@@ -46,9 +52,11 @@ class NotifyTriggerManager:
 
 		# 检查是否满足任一触发条件（OR 关系）
 		if NotifyTrigger.BALANCE_CHANGED in self.triggers:
-			# 成功提醒收敛为：仅在所有账号都完成余额变化时发送
-			if all_balance_changed:
+			if has_balance_changed:
 				return True
+
+		if NotifyTrigger.FIRST_SEEN in self.triggers and has_first_seen:
+			return True
 
 		if NotifyTrigger.FAILED in self.triggers and has_failed:
 			return True
@@ -65,6 +73,7 @@ class NotifyTriggerManager:
 		has_balance_changed: bool,
 		all_balance_changed: bool,
 		is_first_run: bool,
+		has_first_seen: bool = False,
 	) -> list[str]:
 		"""
 		获取通知触发的原因列表
@@ -74,6 +83,7 @@ class NotifyTriggerManager:
 			has_failed: 是否有失败的账号
 			has_balance_changed: 是否有余额变化
 			all_balance_changed: 是否所有账号都完成余额变化
+			has_first_seen: 是否有新增账号首次建立余额基线
 			is_first_run: 是否是首次运行（保留参数，供其他触发器扩展使用）
 
 		Returns:
@@ -81,8 +91,11 @@ class NotifyTriggerManager:
 		"""
 		reasons = []
 
-		if all_balance_changed and NotifyTrigger.BALANCE_CHANGED in self.triggers:
-			reasons.append('全部账号额度变化')
+		if has_balance_changed and NotifyTrigger.BALANCE_CHANGED in self.triggers:
+			reasons.append('账号额度变化')
+
+		if has_first_seen and NotifyTrigger.FIRST_SEEN in self.triggers:
+			reasons.append('新增账号首次建立额度基线')
 
 		if has_failed and NotifyTrigger.FAILED in self.triggers:
 			reasons.append('账号失败')
@@ -99,6 +112,7 @@ class NotifyTriggerManager:
 		has_balance_changed: bool,
 		all_balance_changed: bool,
 		is_first_run: bool,
+		has_first_seen: bool = False,
 	) -> list[str]:
 		"""
 		获取未发送通知时的原因列表
@@ -108,6 +122,7 @@ class NotifyTriggerManager:
 			has_failed: 是否有失败的账号
 			has_balance_changed: 是否有余额变化
 			all_balance_changed: 是否所有账号都完成余额变化
+			has_first_seen: 是否有新增账号首次建立余额基线
 			is_first_run: 是否是首次运行
 
 		Returns:
@@ -119,19 +134,20 @@ class NotifyTriggerManager:
 			reasons.append('配置了 never 触发器')
 			return reasons
 
-		if NotifyTrigger.BALANCE_CHANGED in self.triggers and not all_balance_changed:
-			if is_first_run:
-				reasons.append('首次运行仅建立额度基线')
-			elif has_balance_changed:
-				reasons.append('仅部分账号额度变化，未达到全部账号额度变化')
-			else:
-				reasons.append('未检测到全部账号额度变化')
-
 		if NotifyTrigger.FAILED in self.triggers and not has_failed:
 			reasons.append('未出现失败账号')
 
 		if NotifyTrigger.SUCCESS in self.triggers and not has_success:
 			reasons.append('未出现成功账号')
+
+		if NotifyTrigger.BALANCE_CHANGED in self.triggers:
+			if is_first_run:
+				reasons.append('首次运行仅建立额度基线')
+			elif not has_balance_changed:
+				reasons.append('未检测到账号额度变化')
+
+		if NotifyTrigger.FIRST_SEEN in self.triggers and not has_first_seen:
+			reasons.append('未检测到新增账号')
 
 		if not reasons:
 			reasons.append('未命中任何通知触发条件')

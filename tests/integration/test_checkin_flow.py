@@ -57,8 +57,8 @@ class TestCheckinFlow:
 		assert_file_content_contains(summary_file, '成功')
 		assert_file_content_contains(summary_file, '通知决策')
 		assert_file_content_contains(summary_file, '触发器配置')
-		assert_file_content_contains(summary_file, '已跳过')
-		assert_file_content_contains(summary_file, '首次运行仅建立额度基线')
+		assert_file_content_contains(summary_file, '已发送')
+		assert_file_content_contains(summary_file, '新增账号首次建立额度基线')
 
 	@pytest.mark.asyncio
 	async def test_balance_change_detection_and_notify_triggers(
@@ -72,7 +72,8 @@ class TestCheckinFlow:
 		accounts_env(STANDARD_ACCOUNTS)
 		config_env_setter('dingtalk', 'https://mock.dingtalk.com/hook')
 
-		# 第一次运行（首次运行但无历史变动，不发送通知）
+		# 第一次运行（仅配置 balance_changed 时，首次运行只建立基线，不发送通知）
+		monkeypatch.setenv('NOTIFY_TRIGGERS', 'balance_changed')
 		app_first = Application()
 		app_first.balance_manager.balance_hash_file = tmp_path / 'balance_hash.txt'
 
@@ -168,6 +169,26 @@ class TestCheckinFlow:
 
 			expected_count = 1 if should_notify else 0
 			assert mock_push.await_count == expected_count, f'触发器 {triggers}: {reason}'
+
+	@pytest.mark.asyncio
+	async def test_first_seen_trigger_notifies_new_account(self, accounts_env, tmp_path, monkeypatch):
+		"""测试新增账号首次建立余额基线时可以发送通知"""
+		accounts_env(STANDARD_ACCOUNTS)
+		monkeypatch.setenv('NOTIFY_TRIGGERS', 'first_seen')
+
+		app = Application()
+		app.balance_manager.balance_hash_file = tmp_path / 'balance_hash.txt'
+
+		with patch.dict(os.environ, {'GITHUB_STEP_SUMMARY': '/dev/null'}):
+			with ExitStack() as stack:
+				MockPlaywright.setup_success(stack)
+				MockHttpClient.setup(stack, MockHttpClient.get_success_handler, MockHttpClient.post_success_handler)
+
+				with patch('notif.notification_kit.NotificationKit.push_message', new=AsyncMock()) as mock_push:
+					with pytest.raises(SystemExit):
+						await app.run()
+
+		assert mock_push.await_count == 1, '新增账号首次建立余额基线时应该发送通知'
 
 	@pytest.mark.asyncio
 	async def test_partial_and_full_failure_scenarios(self, accounts_env, tmp_path, monkeypatch):

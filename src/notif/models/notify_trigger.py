@@ -13,6 +13,9 @@ class NotifyTrigger(Enum):
 	# 任意账号成功
 	SUCCESS = 'success'
 
+	# 检测到新增账号首次建立余额基线
+	FIRST_SEEN = 'first_seen'
+
 	# 总是发送
 	ALWAYS = 'always'
 
