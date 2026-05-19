@@ -365,3 +365,36 @@ class TestNotificationKit:
 		assert '已用变化：+3.0' in rendered_content
 		assert '<b>❌ 失败账号</b>' in rendered_content
 		assert '• 账号 C：登录失效' in rendered_content
+
+	def test_default_telegram_template_includes_first_seen_section(
+		self,
+		monkeypatch: pytest.MonkeyPatch,
+		clean_notification_env: None,
+	) -> None:
+		"""测试默认 Telegram 模板会展示新增账号首次建立额度基线摘要"""
+		monkeypatch.setenv(
+			'TELEGRAM_NOTIF_CONFIG',
+			'{"bot_token": "test_token", "chat_id": "123456"}',
+		)
+		kit = NotificationKit()
+		assert kit.telegram_config is not None
+		assert kit.telegram_config.template is not None
+
+		data = build_notification_data([
+			build_account_result(
+				name='账号 D',
+				quota=10.0,
+				used=1.0,
+				balance_changed=False,
+				first_seen=True,
+			),
+		])
+		context = kit._build_context_data(data)
+
+		rendered_title, rendered_content = kit._render_template(kit.telegram_config.template, context)
+
+		assert rendered_title == 'AnyRouter 新增账号签到提醒'
+		assert context['has_first_seen'] is True
+		assert context['first_seen_accounts'][0].name == '账号 D'
+		assert '<b>🆕 新增账号已建立额度基线</b>' in rendered_content
+		assert '<b>• 账号 D</b>' in rendered_content

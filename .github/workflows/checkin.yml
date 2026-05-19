@@ -28,8 +28,8 @@ jobs:
       FEISHU_NOTIF_CONFIG: ${{ secrets.FEISHU_NOTIF_CONFIG }}
       WECOM_NOTIF_CONFIG: ${{ secrets.WECOM_NOTIF_CONFIG }}
       TELEGRAM_NOTIF_CONFIG: ${{ secrets.TELEGRAM_NOTIF_CONFIG }}
-      # 通知触发条件（默认仅在全部账号都检测到实际余额变化时通知，可通过仓库变量 NOTIFY_TRIGGERS 覆盖）
-      NOTIFY_TRIGGERS: ${{ vars.NOTIFY_TRIGGERS || 'balance_changed' }}
+      # 通知触发条件（默认在失败、任意账号余额变化、新增账号首次建立基线时通知，可通过仓库变量 NOTIFY_TRIGGERS 覆盖）
+      NOTIFY_TRIGGERS: ${{ vars.NOTIFY_TRIGGERS || 'failed,balance_changed,first_seen' }}
     steps:
       - name: 📥 检出代码
         uses: actions/checkout@v6

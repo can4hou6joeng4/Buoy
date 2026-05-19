@@ -11,6 +11,7 @@ def build_account_result(
 	quota: float | None = None,
 	used: float | None = None,
 	balance_changed: bool | None = None,
+	first_seen: bool = False,
 	prev_quota: float | None = None,
 	prev_used: float | None = None,
 	quota_delta: float | None = None,
@@ -28,6 +29,7 @@ def build_account_result(
 		quota: 总额度
 		used: 已使用额度
 		balance_changed: 余额是否变化
+		first_seen: 是否为首次建立余额基线的新增账号
 		prev_quota: 变动前额度
 		prev_used: 变动前已使用
 		quota_delta: 额度变化值
@@ -45,6 +47,7 @@ def build_account_result(
 		quota=quota if status == 'success' and quota is not None else (25.0 if status == 'success' else None),
 		used=used if status == 'success' and used is not None else (5.0 if status == 'success' else None),
 		balance_changed=balance_changed,
+		first_seen=first_seen,
 		prev_quota=prev_quota,
 		prev_used=prev_used,
 		quota_delta=quota_delta,

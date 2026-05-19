@@ -264,6 +264,10 @@ class NotificationKit:
 			acc for acc in success_accounts
 			if acc.balance_changed is True
 		]  # fmt: skip
+		first_seen_accounts = [
+			acc for acc in success_accounts
+			if acc.first_seen is True
+		]  # fmt: skip
 		balance_unchanged_accounts = [
 			acc for acc in success_accounts
 			if acc.balance_changed is False
@@ -310,10 +314,12 @@ class NotificationKit:
 			'partial_success': data.stats.success_count > 0 and data.stats.failed_count > 0,
 			# 余额变化相关的变量（只包含成功的账号）
 			'balance_changed_accounts': balance_changed_accounts,
+			'first_seen_accounts': first_seen_accounts,
 			'balance_unchanged_accounts': balance_unchanged_accounts,
 			'quota_changed_accounts': quota_changed_accounts,
 			'used_changed_accounts': used_changed_accounts,
 			'has_balance_changed': len(balance_changed_accounts) > 0,
+			'has_first_seen': len(first_seen_accounts) > 0,
 			'has_balance_unchanged': len(balance_unchanged_accounts) > 0,
 			'has_quota_changed': len(quota_changed_accounts) > 0,
 			'has_used_changed': len(used_changed_accounts) > 0,

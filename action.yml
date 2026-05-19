@@ -39,9 +39,9 @@ inputs:
     description: 'Telegram 通知配置'
     required: false
   notify-triggers:
-    description: '通知触发条件（balance_changed 表示全部账号都检测到实际余额变化）'
+    description: '通知触发条件（failed 表示任意账号失败，balance_changed 表示任意账号余额变化，first_seen 表示新增账号首次建立余额基线）'
     required: false
-    default: balance_changed
+    default: failed,balance_changed,first_seen
 
 runs:
   using: 'composite'

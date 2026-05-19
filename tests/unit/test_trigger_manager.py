@@ -10,17 +10,18 @@ class TestNotifyTriggerManager:
 		'env_value,expected_triggers',
 		[
 			# 测试默认值（未配置）
-			(None, {NotifyTrigger.BALANCE_CHANGED}),
+			(None, {NotifyTrigger.FAILED, NotifyTrigger.BALANCE_CHANGED, NotifyTrigger.FIRST_SEEN}),
 			# 测试单个触发器
 			('always', {NotifyTrigger.ALWAYS}),
+			('first_seen', {NotifyTrigger.FIRST_SEEN}),
 			# 测试多个触发器
-			('success,failed', {NotifyTrigger.SUCCESS, NotifyTrigger.FAILED}),
+			('success,failed,first_seen', {NotifyTrigger.SUCCESS, NotifyTrigger.FAILED, NotifyTrigger.FIRST_SEEN}),
 			# 测试带空格
 			(' success , balance_changed ', {NotifyTrigger.SUCCESS, NotifyTrigger.BALANCE_CHANGED}),
 			# 测试无效触发器（使用默认值）
-			('invalid', {NotifyTrigger.BALANCE_CHANGED}),
+			('invalid', {NotifyTrigger.FAILED, NotifyTrigger.BALANCE_CHANGED, NotifyTrigger.FIRST_SEEN}),
 			# 测试空字符串（使用默认值）
-			('', {NotifyTrigger.BALANCE_CHANGED}),
+			('', {NotifyTrigger.FAILED, NotifyTrigger.BALANCE_CHANGED, NotifyTrigger.FIRST_SEEN}),
 			# 测试大小写不敏感
 			('ALWAYS', {NotifyTrigger.ALWAYS}),
 			('Success,Failed', {NotifyTrigger.SUCCESS, NotifyTrigger.FAILED}),
@@ -44,31 +45,34 @@ class TestNotifyTriggerManager:
 		assert manager.triggers == expected_triggers
 
 	@pytest.mark.parametrize(
-		'triggers,has_success,has_failed,has_balance_changed,all_balance_changed,is_first_run,expected',
+		'triggers,has_success,has_failed,has_balance_changed,all_balance_changed,is_first_run,has_first_seen,expected',
 		[
 			# never 触发器（优先级最高）
-			('never', True, True, True, True, True, False),
+			('never', True, True, True, True, True, True, False),
 			# always 触发器
-			('always', False, False, False, False, False, True),
-			('always', True, True, True, True, True, True),
+			('always', False, False, False, False, False, False, True),
+			('always', True, True, True, True, True, True, True),
 			# success 触发器
-			('success', True, False, False, False, False, True),
-			('success', False, False, False, False, False, False),
+			('success', True, False, False, False, False, False, True),
+			('success', False, False, False, False, False, False, False),
 			# failed 触发器
-			('failed', False, True, False, False, False, True),
-			('failed', False, False, False, False, False, False),
+			('failed', False, True, False, False, False, False, True),
+			('failed', False, False, False, False, False, False, False),
 			# balance_changed 触发器 - 首次运行但无实际余额变化
-			('balance_changed', True, False, False, False, True, False),
-			# balance_changed 触发器 - 仅部分账号余额变化，不发成功提醒
-			('balance_changed', True, False, True, False, False, False),
+			('balance_changed', True, False, False, False, True, False, False),
+			# balance_changed 触发器 - 任意账号余额变化即发送通知
+			('balance_changed', True, False, True, False, False, False, True),
 			# balance_changed 触发器 - 全部账号余额变化
-			('balance_changed', True, False, True, True, False, True),
+			('balance_changed', True, False, True, True, False, False, True),
+			# first_seen 触发器
+			('first_seen', True, False, False, False, True, True, True),
+			('first_seen', True, False, False, False, False, False, False),
 			# balance_changed 触发器 - 余额未变化且非首次
-			('balance_changed', True, False, False, False, False, False),
+			('balance_changed', True, False, False, False, False, False, False),
 			# 多触发器组合（OR 关系）- 满足 success
-			('success,failed', True, False, False, False, False, True),
+			('success,failed', True, False, False, False, False, False, True),
 			# 多触发器组合（OR 关系）- 满足 failed
-			('success,failed', False, True, False, False, False, True),
+			('success,failed', False, True, False, False, False, False, True),
 		],
 	)
 	def test_decision_logic(
@@ -80,6 +84,7 @@ class TestNotifyTriggerManager:
 		has_balance_changed: bool,
 		all_balance_changed: bool,
 		is_first_run: bool,
+		has_first_seen: bool,
 		expected: bool,
 	) -> None:
 		"""测试触发器决策逻辑（所有场景）"""
@@ -92,6 +97,7 @@ class TestNotifyTriggerManager:
 			has_balance_changed=has_balance_changed,
 			all_balance_changed=all_balance_changed,
 			is_first_run=is_first_run,
+			has_first_seen=has_first_seen,
 		)
 
 		assert result is expected
@@ -111,25 +117,25 @@ class TestNotifyTriggerManager:
 
 		assert '账号成功' in reasons
 		assert '账号失败' in reasons
-		assert '全部账号额度变化' in reasons
+		assert '账号额度变化' in reasons
 
 	@pytest.mark.parametrize(
 		'triggers,has_success,has_failed,has_balance_changed,all_balance_changed,is_first_run,expected_reasons',
 		[
 			('never', True, False, False, False, False, ['配置了 never 触发器']),
 			('balance_changed', True, False, False, False, True, ['首次运行仅建立额度基线']),
-			('balance_changed', True, False, True, False, False, ['仅部分账号额度变化，未达到全部账号额度变化']),
-			('balance_changed', True, False, False, False, False, ['未检测到全部账号额度变化']),
+			('balance_changed', True, False, False, False, False, ['未检测到账号额度变化']),
+			('first_seen', True, False, False, False, False, ['未检测到新增账号']),
 			('failed', True, False, False, False, False, ['未出现失败账号']),
 			('success', False, False, False, False, False, ['未出现成功账号']),
 			(
 				'success,failed,balance_changed',
 				True,
 				False,
-				True,
 				False,
 				False,
-				['仅部分账号额度变化，未达到全部账号额度变化', '未出现失败账号'],
+				False,
+				['未出现失败账号', '未检测到账号额度变化'],
 			),
 		],
 	)
@@ -160,7 +166,7 @@ class TestNotifyTriggerManager:
 
 	def test_trigger_values(self, monkeypatch: pytest.MonkeyPatch) -> None:
 		"""测试触发器值输出顺序稳定"""
-		monkeypatch.setenv('NOTIFY_TRIGGERS', 'success,failed,balance_changed')
+		monkeypatch.setenv('NOTIFY_TRIGGERS', 'success,failed,balance_changed,first_seen')
 		manager = NotifyTriggerManager()
 
-		assert manager.get_trigger_values() == ['balance_changed', 'failed', 'success']
+		assert manager.get_trigger_values() == ['balance_changed', 'failed', 'success', 'first_seen']

@@ -20,6 +20,9 @@ class AccountResult:
 	# 余额是否发生变化，None 表示获取余额失败无法判断，False 表示未变化或无历史数据
 	balance_changed: bool | None = None
 
+	# 是否为首次建立余额基线的新增账号
+	first_seen: bool = False
+
 	# 变动前余额（仅 balance_changed=True 时有值）
 	prev_quota: float | None = None
 

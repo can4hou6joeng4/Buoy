@@ -72,6 +72,7 @@ class Application:
 		current_balances = {}  # 当前余额数据（仅内存中使用，用于显示）
 		has_any_balance_changed = False  # 是否有任意账号余额变化
 		has_any_failed = False  # 是否有任意账号失败
+		has_any_first_seen = False  # 是否有新增账号首次建立余额基线
 
 		for i, account in enumerate(accounts):
 			api_user = account.get('api_user', '')
@@ -91,6 +92,7 @@ class Application:
 				used_delta = None
 				quota_delta_display = None
 				used_delta_display = None
+				first_seen = False
 				error = None
 
 				if success:
@@ -147,6 +149,9 @@ class Application:
 					else:
 						# 无历史数据时仅记录当前余额，不视为变动通知
 						balance_changed = False
+						first_seen = True
+						has_any_first_seen = True
+						logger.notify('新增账号首次建立额度基线，纳入汇总判断', safe_account_name)
 
 					# 设置余额信息
 					quota = current_quota
@@ -164,6 +169,7 @@ class Application:
 					quota=quota,
 					used=used,
 					balance_changed=balance_changed,
+					first_seen=first_seen,
 					prev_quota=prev_quota,
 					prev_used=prev_used,
 					quota_delta=quota_delta,
@@ -212,6 +218,7 @@ class Application:
 			has_balance_changed=has_any_balance_changed,
 			all_balance_changed=all_balance_changed,
 			is_first_run=is_first_run,
+			has_first_seen=has_any_first_seen,
 		)
 		trigger_values = self.notify_trigger_manager.get_trigger_values()
 		decision_reasons = (
@@ -221,6 +228,7 @@ class Application:
 				has_balance_changed=has_any_balance_changed,
 				all_balance_changed=all_balance_changed,
 				is_first_run=is_first_run,
+				has_first_seen=has_any_first_seen,
 			)
 			if need_notify
 			else self.notify_trigger_manager.get_skip_reasons(
@@ -229,6 +237,7 @@ class Application:
 				has_balance_changed=has_any_balance_changed,
 				all_balance_changed=all_balance_changed,
 				is_first_run=is_first_run,
+				has_first_seen=has_any_first_seen,
 			)
 		)
 
@@ -306,6 +315,7 @@ class Application:
 					status=result.status,
 					quota=result.quota,
 					used=result.used,
+					first_seen=result.first_seen,
 					error=result.error,
 				)
 			)
