@@ -15,6 +15,8 @@ class TestPrivacyHandler:
 			('public', None, {'cookies': 'test', 'api_user': 'user2'}, '账号 2', False),
 			# 私有仓库（不脱敏）
 			('private', None, {'name': '我的账号', 'cookies': 'test', 'api_user': 'user1'}, '我的账号', False),
+			# GitHub Actions secret 未配置时会传入空字符串，应按未配置处理
+			('private', '', {'name': '我的账号', 'cookies': 'test', 'api_user': 'user1'}, '我的账号', False),
 			# 强制显示敏感信息（不脱敏）
 			('public', 'true', {'name': '我的账号', 'cookies': 'test', 'api_user': 'user1'}, '我的账号', False),
 			# Emoji 账号名称
@@ -40,7 +42,7 @@ class TestPrivacyHandler:
 	) -> None:
 		"""测试账号名称处理（自定义/默认/脱敏/边界条件）"""
 		monkeypatch.setenv('REPO_VISIBILITY', repo_visibility)
-		if show_sensitive:
+		if show_sensitive is not None:
 			monkeypatch.setenv('SHOW_SENSITIVE_INFO', show_sensitive)
 		else:
 			monkeypatch.delenv('SHOW_SENSITIVE_INFO', raising=False)
@@ -70,6 +72,8 @@ class TestPrivacyHandler:
 			('public', None, 50.0, 10.0, False),
 			# 私有仓库（显示余额）
 			('private', None, 50.0, 10.0, True),
+			# GitHub Actions secret 未配置时会传入空字符串，应按未配置处理
+			('private', '', 50.0, 10.0, True),
 			# 强制显示
 			('public', 'true', 50.0, 10.0, True),
 			# 大数字边界测试
@@ -89,7 +93,7 @@ class TestPrivacyHandler:
 	) -> None:
 		"""测试余额显示（显示/隐藏/边界值）"""
 		monkeypatch.setenv('REPO_VISIBILITY', repo_visibility)
-		if show_sensitive:
+		if show_sensitive is not None:
 			monkeypatch.setenv('SHOW_SENSITIVE_INFO', show_sensitive)
 		else:
 			monkeypatch.delenv('SHOW_SENSITIVE_INFO', raising=False)

@@ -36,8 +36,8 @@ class PrivacyHandler:
 		"""
 		# 1. 检查用户手动配置（最高优先级）
 		manual_config = os.getenv(PrivacyHandler.ENV_SHOW_SENSITIVE_INFO)
-		if manual_config is not None:
-			return manual_config.lower() == 'true'
+		if manual_config is not None and manual_config.strip():
+			return manual_config.strip().lower() == 'true'
 
 		# 2. 检查调试模式
 		debug_mode = os.getenv(PrivacyHandler.ENV_ACTIONS_RUNNER_DEBUG, '').lower() == 'true'
