@@ -1,14 +1,39 @@
 from typing import Any
+from unittest.mock import AsyncMock
 
 import pytest
 
 from notif import NotificationKit
-from notif.models import NotificationTemplate
+from notif.models import NotificationHandler, NotificationTemplate
 from tests.tools.data_builders import build_account_result, build_notification_data
 
 
 class TestNotificationKit:
 	"""测试 NotificationKit 类"""
+
+	@pytest.mark.asyncio
+	async def test_push_raw_message_returns_true_when_handler_sends(self):
+		kit = NotificationKit()
+		handler = NotificationHandler(
+			name='Test',
+			config=object(),
+			send_func=AsyncMock(),
+		)
+		kit._handlers = [handler]
+
+		result = await kit.push_raw_message('Title', 'Content')
+
+		assert result is True
+		handler.send_func.assert_awaited_once()
+
+	@pytest.mark.asyncio
+	async def test_push_raw_message_returns_false_without_handlers(self):
+		kit = NotificationKit()
+		kit._handlers = []
+
+		result = await kit.push_raw_message('Title', 'Content')
+
+		assert result is False
 
 	@pytest.mark.parametrize(
 		'env_key,env_value,expected_config_attr,expected_value_or_key',
