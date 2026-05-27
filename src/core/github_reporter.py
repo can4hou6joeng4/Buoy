@@ -134,3 +134,42 @@ class GitHubReporter:
 
 		except Exception as e:
 			logger.warning(f'生成 GitHub Actions Step Summary 失败：{e}', tag='Summary')
+
+	def generate_infrastructure_summary(
+		self,
+		reason: str,
+		message: str,
+		attempts: int,
+		url: str,
+		notify_sent: bool,
+	):
+		"""生成基础设施故障专用的 GitHub Actions Step Summary。"""
+		summary_file = os.getenv(self.ENV_GITHUB_STEP_SUMMARY)
+		if not summary_file:
+			logger.debug('未检测到 GitHub Actions 环境，跳过基础设施 summary 生成', tag='Summary')
+			return
+
+		try:
+			lines = [
+				'## 🚧 AnyRouter 基础设施故障',
+				'',
+				'**❌ 未执行账号签到**',
+				'',
+				'### **详细信息**',
+				f'- **执行时间**：{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}',
+				f'- **检查地址**：`{url}`',
+				f'- **故障类型**：`{reason}`',
+				f'- **故障原因**：{message}',
+				f'- **重试次数**：{attempts}',
+				f'- **通知结果**：{"已发送" if notify_sent else "已跳过"}',
+				'',
+				'> 这是域名解析、网络连接或登录页可用性问题，不代表账号凭据全部失效。',
+			]
+
+			with open(summary_file, 'a', encoding='utf-8') as f:
+				f.write('\n'.join(lines))
+				f.write('\n')
+
+			logger.info('GitHub Actions 基础设施故障 Summary 生成成功', tag='Summary')
+		except Exception as e:
+			logger.warning(f'生成基础设施故障 Summary 失败：{e}', tag='Summary')
