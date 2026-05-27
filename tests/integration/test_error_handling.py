@@ -15,6 +15,67 @@ class TestErrorHandling:
 	"""测试错误处理"""
 
 	@pytest.mark.asyncio
+	async def test_infrastructure_failure_skips_account_processing(self, accounts_env, tmp_path):
+		"""基础设施预检失败时不应进入账号级签到循环。"""
+		accounts_env(SINGLE_ACCOUNT)
+		app = Application()
+		app.balance_manager.balance_hash_file = tmp_path / 'hash_infra.txt'
+
+		infrastructure_result = app.checkin_service.InfrastructureCheckResult(
+			available=False,
+			reason='dns_resolution_failed',
+			message='DNS resolution failed for https://anyrouter.top/login',
+			attempts=3,
+			url='https://anyrouter.top/login',
+		)
+
+		with patch.object(app.checkin_service, 'check_infrastructure', new=AsyncMock(return_value=infrastructure_result)):
+			with patch.object(app.checkin_service, 'check_in_account', new=AsyncMock()) as check_account:
+				with patch.object(app.notification_kit, 'push_raw_message', new=AsyncMock(return_value=True)) as push_raw:
+					with patch.object(app.github_reporter, 'generate_infrastructure_summary') as summary:
+						with patch.dict(os.environ, {'GITHUB_STEP_SUMMARY': '/dev/null'}):
+							with pytest.raises(SystemExit) as exc_info:
+								await app.run()
+
+		assert exc_info.value.code == 1
+		check_account.assert_not_awaited()
+		push_raw.assert_awaited_once()
+		assert push_raw.await_args.kwargs['title'] == 'AnyRouter 基础设施故障'
+		content = push_raw.await_args.kwargs['content']
+		assert '未执行账号签到' in content
+		assert 'dns_resolution_failed' in content
+		summary.assert_called_once_with(
+			reason='dns_resolution_failed',
+			message='DNS resolution failed for https://anyrouter.top/login',
+			attempts=3,
+			url='https://anyrouter.top/login',
+			notify_sent=True,
+		)
+
+	@pytest.mark.asyncio
+	async def test_account_401_still_runs_account_flow(self, accounts_env, tmp_path):
+		"""HTTP 401 仍应作为账号级失败处理，而不是基础设施故障。"""
+		accounts_env([{'name': '401 账号', 'cookies': {'session': '401'}, 'api_user': 'user_401'}])
+		app = Application()
+		app.balance_manager.balance_hash_file = tmp_path / 'hash_401_separation.txt'
+
+		with patch.object(app.notification_kit, 'push_raw_message', new=AsyncMock()) as push_raw:
+			with ExitStack() as stack:
+				MockPlaywright.setup_success(stack)
+
+				async def get_handler(*args, **kwargs):
+					return MockHttpClient.build_response(status=401)
+
+				MockHttpClient.setup(stack, get_handler, MockHttpClient.post_success_handler)
+
+				with patch.dict(os.environ, {'GITHUB_STEP_SUMMARY': '/dev/null'}):
+					with pytest.raises(SystemExit) as exc_info:
+						await app.run()
+
+		assert exc_info.value.code == 1
+		push_raw.assert_not_awaited()
+
+	@pytest.mark.asyncio
 	async def test_http_errors_and_network_issues(self, accounts_env, tmp_path):
 		"""测试 HTTP 错误和网络问题（401/500/超时/JSON 错误）"""
 		# 测试 401/500 错误

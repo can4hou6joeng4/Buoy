@@ -238,6 +238,7 @@ class CheckinService:
 					logger.info(user_info['display'], account_name)
 				elif user_info:
 					logger.warning(user_info.get('error', '未知错误'), account_name)
+					return False, user_info
 
 				logger.debug(
 					message='执行签到',
