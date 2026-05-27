@@ -1,5 +1,7 @@
+import asyncio
 import json
 import os
+from dataclasses import dataclass
 from typing import Any
 
 import httpx
@@ -65,6 +67,105 @@ class CheckinService:
 			"""WAF 配置"""
 
 			COOKIE_NAMES = ['acw_tc', 'cdn_sec_tc', 'acw_sc__v2']
+
+	@dataclass(frozen=True)
+	class InfrastructureCheckResult:
+		"""AnyRouter 基础设施预检结果"""
+
+		available: bool
+		reason: str
+		message: str
+		attempts: int
+		url: str = 'https://anyrouter.top/login'
+
+	async def check_infrastructure(
+		self,
+		max_attempts: int = 3,
+		delay_seconds: int = 60,
+	) -> InfrastructureCheckResult:
+		"""检查 AnyRouter 登录页可用性，避免基础设施故障被记为账号失败。"""
+		last_result = self.InfrastructureCheckResult(
+			available=False,
+			reason='not_checked',
+			message='AnyRouter infrastructure has not been checked',
+			attempts=0,
+			url=self.Config.URLs.LOGIN,
+		)
+
+		for attempt in range(1, max_attempts + 1):
+			last_result = await self._check_login_page_once(attempt=attempt)
+			if last_result.available:
+				return last_result
+
+			if attempt < max_attempts:
+				logger.warning(
+					f'基础设施预检失败（{last_result.message}），'
+					f'{delay_seconds} 秒后重试 {attempt + 1}/{max_attempts}',
+					tag='基础设施',
+				)
+				await asyncio.sleep(delay_seconds)
+
+		return last_result
+
+	async def _check_login_page_once(self, attempt: int) -> InfrastructureCheckResult:
+		"""执行一次 AnyRouter 登录页可达性探测。"""
+		try:
+			async with httpx.AsyncClient(http2=True, timeout=30.0, follow_redirects=False) as client:
+				response = await client.get(
+					url=self.Config.URLs.LOGIN,
+					headers={'User-Agent': ' '.join(self.Config.Browser.USER_AGENT_PARTS)},
+				)
+
+			if response.status_code >= 500:
+				return self.InfrastructureCheckResult(
+					available=False,
+					reason='server_error',
+					message=f'AnyRouter login page returned HTTP {response.status_code}',
+					attempts=attempt,
+					url=self.Config.URLs.LOGIN,
+				)
+
+			return self.InfrastructureCheckResult(
+				available=True,
+				reason='available',
+				message='AnyRouter login page is reachable',
+				attempts=attempt,
+				url=self.Config.URLs.LOGIN,
+			)
+
+		except Exception as exc:
+			reason, message = self._classify_infrastructure_error(exc)
+			return self.InfrastructureCheckResult(
+				available=False,
+				reason=reason,
+				message=message,
+				attempts=attempt,
+				url=self.Config.URLs.LOGIN,
+			)
+
+	def _classify_infrastructure_error(self, exc: Exception) -> tuple[str, str]:
+		"""将登录页可达性异常分类为稳定的通知和 summary 字段。"""
+		error_text = str(exc)
+		lowered = error_text.lower()
+
+		dns_markers = (
+			'err_name_not_resolved',
+			'name or service not known',
+			'nodename nor servname',
+			'temporary failure in name resolution',
+			'getaddrinfo failed',
+			'name does not resolve',
+		)
+		if isinstance(exc, httpx.ConnectError) and any(marker in lowered for marker in dns_markers):
+			return 'dns_resolution_failed', f'DNS resolution failed for {self.Config.URLs.LOGIN}: {error_text}'
+
+		if isinstance(exc, httpx.TimeoutException):
+			return 'timeout', f'Timed out reaching {self.Config.URLs.LOGIN}: {error_text}'
+
+		if isinstance(exc, httpx.ConnectError):
+			return 'connection_failed', f'Connection failed for {self.Config.URLs.LOGIN}: {error_text}'
+
+		return 'unknown_infrastructure_error', f'Infrastructure check failed for {self.Config.URLs.LOGIN}: {error_text}'
 
 	async def check_in_account(
 		self,
