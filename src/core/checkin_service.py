@@ -99,8 +99,7 @@ class CheckinService:
 
 			if attempt < max_attempts:
 				logger.warning(
-					f'基础设施预检失败（{last_result.message}），'
-					f'{delay_seconds} 秒后重试 {attempt + 1}/{max_attempts}',
+					f'基础设施预检失败（{last_result.message}），{delay_seconds} 秒后重试 {attempt + 1}/{max_attempts}',
 					tag='基础设施',
 				)
 				await asyncio.sleep(delay_seconds)

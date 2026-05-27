@@ -29,9 +29,13 @@ class TestErrorHandling:
 			url='https://anyrouter.top/login',
 		)
 
-		with patch.object(app.checkin_service, 'check_infrastructure', new=AsyncMock(return_value=infrastructure_result)):
+		with patch.object(
+			app.checkin_service, 'check_infrastructure', new=AsyncMock(return_value=infrastructure_result)
+		):
 			with patch.object(app.checkin_service, 'check_in_account', new=AsyncMock()) as check_account:
-				with patch.object(app.notification_kit, 'push_raw_message', new=AsyncMock(return_value=True)) as push_raw:
+				with patch.object(
+					app.notification_kit, 'push_raw_message', new=AsyncMock(return_value=True)
+				) as push_raw:
 					with patch.object(app.github_reporter, 'generate_infrastructure_summary') as summary:
 						with patch.dict(os.environ, {'GITHUB_STEP_SUMMARY': '/dev/null'}):
 							with pytest.raises(SystemExit) as exc_info:
@@ -40,8 +44,10 @@ class TestErrorHandling:
 		assert exc_info.value.code == 1
 		check_account.assert_not_awaited()
 		push_raw.assert_awaited_once()
-		assert push_raw.await_args.kwargs['title'] == 'AnyRouter 基础设施故障'
-		content = push_raw.await_args.kwargs['content']
+		await_args = push_raw.await_args
+		assert await_args is not None
+		assert await_args.kwargs['title'] == 'AnyRouter 基础设施故障'
+		content = await_args.kwargs['content']
 		assert '未执行账号签到' in content
 		assert 'dns_resolution_failed' in content
 		summary.assert_called_once_with(
