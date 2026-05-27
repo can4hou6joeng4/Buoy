@@ -64,6 +64,44 @@ class Application:
 		# 加载余额 hash 字典
 		last_balance_hash_dict = self.balance_manager.load_balance_hash()
 
+		# 先检查 AnyRouter 登录页可达性，避免 DNS/站点故障被误报为所有账号失败
+		infrastructure_result = await self.checkin_service.check_infrastructure()
+		if not infrastructure_result.available:
+			logger.error(
+				message=f'基础设施故障：{infrastructure_result.message}',
+				tag='基础设施',
+			)
+			timezone_name = os.getenv('TZ') or self.DEFAULT_TIMEZONE
+			try:
+				timezone = ZoneInfo(timezone_name)
+			except Exception:
+				logger.warning(f'时区 {timezone_name} 无效，使用默认时区 {self.DEFAULT_TIMEZONE}')
+				timezone = ZoneInfo(self.DEFAULT_TIMEZONE)
+			timestamp_format = os.getenv('TIMESTAMP_FORMAT') or self.DEFAULT_TIMESTAMP_FORMAT
+			timestamp = datetime.now(timezone).strftime(timestamp_format)
+
+			title = 'AnyRouter 基础设施故障'
+			content = (
+				f'⏰ 执行时间\n'
+				f'{timestamp}\n\n'
+				f'🚧 基础设施故障\n'
+				f'服务：anyrouter.top\n'
+				f'地址：{infrastructure_result.url}\n'
+				f'类型：{infrastructure_result.reason}\n'
+				f'原因：{infrastructure_result.message}\n'
+				f'重试：{infrastructure_result.attempts}/3，每次间隔 60 秒\n\n'
+				f'本次未执行账号签到，不代表账号凭据全部失效。'
+			)
+			notify_sent = await self.notification_kit.push_raw_message(title=title, content=content)
+			self.github_reporter.generate_infrastructure_summary(
+				reason=infrastructure_result.reason,
+				message=infrastructure_result.message,
+				attempts=infrastructure_result.attempts,
+				url=infrastructure_result.url,
+				notify_sent=notify_sent,
+			)
+			sys.exit(1)
+
 		# 为每个账号执行签到
 		success_count = 0
 		total_count = len(accounts)
