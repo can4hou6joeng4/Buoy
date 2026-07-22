@@ -1,9 +1,9 @@
-# 🎫 autocheck-anyrouter
+# 🛟 Buoy
 
 > 基于 Python 的 AnyRouter 多账号自动签到工具，支持多种通知方式和智能隐私保护 </br>
 > 🩷 本项目基于 [anyrouter-check-in](https://github.com/millylee/anyrouter-check-in) 实现核心签到功能，特别感谢 [Milly](https://github.com/millylee) 的付出与开源精神！
 
-[![GitHub Workflow Status](https://img.shields.io/github/actions/workflow/status/can4hou6joeng4/autocheck-anyrouter/ci.yml?branch=main)](https://github.com/can4hou6joeng4/autocheck-anyrouter/actions)
+[![GitHub Workflow Status](https://img.shields.io/github/actions/workflow/status/can4hou6joeng4/Buoy/ci.yml?branch=main)](https://github.com/can4hou6joeng4/Buoy/actions)
 [![License](https://img.shields.io/badge/license-BSD--2--Clause-green.svg)](LICENSE)
 
 ## 功能特性
@@ -83,7 +83,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: 执行签到
-        uses: can4hou6joeng4/autocheck-anyrouter@main
+        uses: can4hou6joeng4/Buoy@main
         with:
           # 从环境变量加载账号信息
           accounts: ${{ secrets.ANYROUTER_ACCOUNTS }}
