@@ -1,16 +1,14 @@
-# autocheck-anyrouter
+# 🎫 autocheck-anyrouter
 
 > 基于 Python 的 AnyRouter 多账号自动签到工具，支持多种通知方式和智能隐私保护 </br>
 > 🩷 本项目基于 [anyrouter-check-in](https://github.com/millylee/anyrouter-check-in) 实现核心签到功能，特别感谢 [Milly](https://github.com/millylee) 的付出与开源精神！
 
-[![GitHub release (latest by date)](https://img.shields.io/github/v/release/rakuyoMo/autocheck-anyrouter)](https://github.com/rakuyoMo/autocheck-anyrouter/releases)
-[![GitHub Workflow Status](https://img.shields.io/github/actions/workflow/status/rakuyoMo/autocheck-anyrouter/ci.yml?branch=main)](https://github.com/rakuyoMo/autocheck-anyrouter/actions)
-[![codecov](https://codecov.io/gh/rakuyoMo/autocheck-anyrouter/branch/main/graph/badge.svg)](https://codecov.io/gh/rakuyoMo/autocheck-anyrouter)
+[![GitHub Workflow Status](https://img.shields.io/github/actions/workflow/status/can4hou6joeng4/autocheck-anyrouter/ci.yml?branch=main)](https://github.com/can4hou6joeng4/autocheck-anyrouter/actions)
 [![License](https://img.shields.io/badge/license-BSD--2--Clause-green.svg)](LICENSE)
 
 ## 功能特性
 
-> 版本更新内容可查看 [CHANGELOG](CHANGELOG.md) 或 [release page](https://github.com/rakuyoMo/autocheck-anyrouter/releases)
+> 版本更新内容可查看 [CHANGELOG](CHANGELOG.md)
 
 ### 核心功能
 - [x] 单个/多账号自动签到
@@ -85,7 +83,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: 执行签到
-        uses: rakuyoMo/autocheck-anyrouter@v1
+        uses: can4hou6joeng4/autocheck-anyrouter@main
         with:
           # 从环境变量加载账号信息
           accounts: ${{ secrets.ANYROUTER_ACCOUNTS }}
