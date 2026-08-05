@@ -9,6 +9,10 @@
 ## [Unreleased]
 
 #### Add
+* 新增上游服务故障识别：签到接口返回 HTTP 200 但透传服务端错误（如 `Error 1290 (HY000) ... LOCK_WRITE_GROWTH` 数据库只读）或返回 5xx 时，账号状态记为 `upstream_fault`，不计入失败数、不影响工作流退出码。
+* 新增 `upstream_fault_accounts`、`has_upstream_fault`、`upstream_fault_message` 模板变量与 `stats.upstream_fault_count` 统计字段，各平台默认模板同步展示上游故障区块。
+* 模板通知未被触发时，上游服务故障会单独推送一条通知，说明这不是账号凭据失效。
+* 签到请求新增超时重试（最多 3 次，间隔 5 秒），WAF cookies 获取新增重试（最多 2 次），消除偶发的 `httpx.ReadTimeout` 与 `Page.goto: Timeout` 导致的单账号失败。
 * 邮件通知新增 `sender` 可选字段，支持 SMTP 登录用户与发件人地址不同的场景（如 Resend 服务）。
 * Workflow 中使用 `secrets-to-env-action` 自动加载 `ANYROUTER_ACCOUNT_*` secrets 为环境变量，新增账号时无需修改 workflow 文件。
 * 新增 `ANYROUTER_ACCOUNT_*` 前缀环境变量支持，允许每个账号使用独立的环境变量配置，便于单独更新某个账号的 Token。

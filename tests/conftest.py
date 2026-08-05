@@ -2,6 +2,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
+import pytest
 from dotenv import load_dotenv
 
 # 添加项目根目录到 PATH
@@ -21,6 +22,14 @@ from tests.fixtures.data import (
 	single_success_data,
 )
 from tests.fixtures.env import accounts_env, clean_notification_env, config_env_setter
+
+
+@pytest.fixture(autouse=True)
+def instant_retry_delay(monkeypatch: pytest.MonkeyPatch):
+	"""去掉重试等待，避免测试为了覆盖重试路径而真的 sleep。"""
+	from core.checkin_service import CheckinService
+
+	monkeypatch.setattr(CheckinService.Config.Retry, 'DELAY_SECONDS', 0)
 
 
 def assert_json_contains(actual: dict[str, Any], expected: dict[str, Any]) -> None:

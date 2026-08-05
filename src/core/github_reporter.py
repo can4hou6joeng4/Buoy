@@ -28,6 +28,7 @@ class GitHubReporter:
 		notify_sent: bool,
 		notify_triggers: list[str],
 		notify_reasons: list[str],
+		upstream_fault_message: str | None = None,
 	):
 		"""
 		生成 GitHub Actions Step Summary
@@ -39,6 +40,7 @@ class GitHubReporter:
 			notify_sent: 本次是否发送通知
 			notify_triggers: 当前生效的通知触发器
 			notify_reasons: 本次通知发送/跳过的原因
+			upstream_fault_message: 上游服务故障描述，无故障时为 None
 		"""
 		# 检查是否在 GitHub Actions 环境中运行
 		summary_file = os.getenv(self.ENV_GITHUB_STEP_SUMMARY)
@@ -49,13 +51,18 @@ class GitHubReporter:
 		try:
 			# 分组账号
 			success_accounts = [acc for acc in account_results if acc.status == 'success']
-			failed_accounts = [acc for acc in account_results if acc.status != 'success']
+			upstream_fault_accounts = [acc for acc in account_results if acc.status == 'upstream_fault']
+			failed_accounts = [
+				acc for acc in account_results
+				if acc.status not in ('success', 'upstream_fault')
+			]  # fmt: skip
 
-			failed_count = total_count - success_count
+			failed_count = len(failed_accounts)
+			upstream_fault_count = len(upstream_fault_accounts)
 			has_success = len(success_accounts) > 0
-			has_failed = len(failed_accounts) > 0
-			all_success = len(failed_accounts) == 0
-			all_failed = len(success_accounts) == 0
+			has_failed = failed_count > 0
+			has_upstream_fault = upstream_fault_count > 0
+			all_success = not has_failed and not has_upstream_fault
 
 			# 构建 markdown 字符串
 			lines = []
@@ -67,7 +74,9 @@ class GitHubReporter:
 			# 状态标题
 			if all_success:
 				lines.append('**✅ 所有账号全部签到成功！**')
-			elif has_success and has_failed:
+			elif not has_success and has_upstream_fault and not has_failed:
+				lines.append('**🚧 上游服务故障，本次未能签到（非账号问题）**')
+			elif has_success and (has_failed or has_upstream_fault):
 				lines.append('**⚠️ 部分账号签到成功**')
 			else:
 				lines.append('**❌ 所有账号签到失败**')
@@ -79,6 +88,8 @@ class GitHubReporter:
 			lines.append(f'- **执行时间**：{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}')
 			lines.append(f'- **成功比例**：{success_count}/{total_count}')
 			lines.append(f'- **失败比例**：{failed_count}/{total_count}')
+			if has_upstream_fault:
+				lines.append(f'- **上游故障**：{upstream_fault_count}/{total_count}')
 			lines.append('')
 
 			lines.append('### 通知决策')
@@ -87,6 +98,16 @@ class GitHubReporter:
 			if notify_reasons:
 				lines.append(f'- **决策原因**：{"；".join(notify_reasons)}')
 			lines.append('')
+
+			# 上游服务故障
+			if has_upstream_fault:
+				lines.append('### 🚧 上游服务故障')
+				if upstream_fault_message:
+					lines.append(f'- **故障原因**：{upstream_fault_message}')
+				lines.append(f'- **受影响账号**：{", ".join(acc.name for acc in upstream_fault_accounts)}')
+				lines.append('')
+				lines.append('> 这是 AnyRouter 服务端问题，不代表账号凭据失效，未计入失败数。')
+				lines.append('')
 
 			# 成功账号表格
 			if has_success:

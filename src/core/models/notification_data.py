@@ -20,15 +20,18 @@ class NotificationData:
 	# 时区信息
 	timezone: str | None = None
 
+	# 上游服务故障描述，仅在出现上游故障时有值
+	upstream_fault_message: str | None = None
+
 	@property
 	def all_success(self) -> bool:
 		"""是否全部成功"""
-		return self.stats.failed_count == 0
+		return self.stats.failed_count == 0 and self.stats.upstream_fault_count == 0
 
 	@property
 	def all_failed(self) -> bool:
 		"""是否全部失败"""
-		return self.stats.success_count == 0
+		return self.stats.success_count == 0 and self.stats.upstream_fault_count == 0
 
 	@property
 	def partial_success(self) -> bool:

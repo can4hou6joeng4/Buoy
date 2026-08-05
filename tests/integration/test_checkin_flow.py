@@ -210,7 +210,11 @@ class TestCheckinFlow:
 					call_count['post'] += 1
 					if call_count['post'] == 1:
 						return MockHttpClient.build_response(status=200, json_data={'ret': 1})
-					return MockHttpClient.build_response(status=500)  # 第二个账号失败
+					# 第二个账号失败（账号级业务错误，非上游故障）
+					return MockHttpClient.build_response(
+						status=200,
+						json_data={'ret': 0, 'msg': '未登录或登录已过期'},
+					)
 
 				MockHttpClient.setup(stack, MockHttpClient.get_success_handler, post_handler_partial)
 
@@ -230,7 +234,10 @@ class TestCheckinFlow:
 				MockPlaywright.setup_success(stack)
 
 				async def post_handler_fail(*args, **kwargs):
-					return MockHttpClient.build_response(status=500)
+					return MockHttpClient.build_response(
+						status=200,
+						json_data={'ret': 0, 'msg': '未登录或登录已过期'},
+					)
 
 				MockHttpClient.setup(stack, MockHttpClient.get_success_handler, post_handler_fail)
 

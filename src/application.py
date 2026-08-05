@@ -40,6 +40,28 @@ class Application:
 		self.notification_kit = NotificationKit()
 		self.github_reporter = GitHubReporter(self.privacy_handler)
 
+	def _build_timestamp(self) -> tuple[str, str]:
+		"""
+		按配置的时区和格式生成执行时间戳
+
+		Returns:
+			tuple[str, str]: (格式化时间戳, 时区缩写)
+		"""
+		# 获取时区配置（处理空字符串的情况）
+		timezone_name = os.getenv('TZ') or self.DEFAULT_TIMEZONE
+		try:
+			timezone = ZoneInfo(timezone_name)
+		except Exception:
+			# 如果时区无效，使用默认时区
+			logger.warning(f'时区 {timezone_name} 无效，使用默认时区 {self.DEFAULT_TIMEZONE}')
+			timezone = ZoneInfo(self.DEFAULT_TIMEZONE)
+
+		# 获取时间戳格式配置（处理空字符串的情况）
+		timestamp_format = os.getenv('TIMESTAMP_FORMAT') or self.DEFAULT_TIMESTAMP_FORMAT
+
+		now = datetime.now(timezone)
+		return now.strftime(timestamp_format), now.strftime('%Z')
+
 	async def run(self):
 		"""执行签到流程"""
 		logger.info(
@@ -71,14 +93,7 @@ class Application:
 				message=f'基础设施故障：{infrastructure_result.message}',
 				tag='基础设施',
 			)
-			timezone_name = os.getenv('TZ') or self.DEFAULT_TIMEZONE
-			try:
-				timezone = ZoneInfo(timezone_name)
-			except Exception:
-				logger.warning(f'时区 {timezone_name} 无效，使用默认时区 {self.DEFAULT_TIMEZONE}')
-				timezone = ZoneInfo(self.DEFAULT_TIMEZONE)
-			timestamp_format = os.getenv('TIMESTAMP_FORMAT') or self.DEFAULT_TIMESTAMP_FORMAT
-			timestamp = datetime.now(timezone).strftime(timestamp_format)
+			timestamp, _ = self._build_timestamp()
 
 			title = 'AnyRouter 基础设施故障'
 			content = (
@@ -109,13 +124,15 @@ class Application:
 		current_balance_hash_dict = {}  # 当前余额 hash 字典
 		current_balances = {}  # 当前余额数据（仅内存中使用，用于显示）
 		has_any_balance_changed = False  # 是否有任意账号余额变化
-		has_any_failed = False  # 是否有任意账号失败
+		has_any_failed = False  # 是否有任意账号失败（不含上游服务故障）
 		has_any_first_seen = False  # 是否有新增账号首次建立余额基线
+		upstream_fault_count = 0  # 因上游服务故障未能签到的账号数
+		upstream_fault: CheckinService.UpstreamFault | None = None  # 首个上游服务故障详情
 
 		for i, account in enumerate(accounts):
 			api_user = account.get('api_user', '')
 			try:
-				success, user_info = await self.checkin_service.check_in_account(account, i)
+				success, user_info, account_upstream_fault = await self.checkin_service.check_in_account(account, i)
 				# 日志使用脱敏名称，通知使用完整名称
 				safe_account_name = self.privacy_handler.get_safe_account_name(account, i)
 				full_account_name = self.privacy_handler.get_full_account_name(account, i)
@@ -135,6 +152,16 @@ class Application:
 
 				if success:
 					success_count += 1
+				elif account_upstream_fault:
+					# AnyRouter 服务端故障，与账号凭据无关，不记为账号失败
+					upstream_fault_count += 1
+					if upstream_fault is None:
+						upstream_fault = account_upstream_fault
+					logger.warning(
+						message='上游服务故障，不计入账号失败',
+						tag='上游',
+						account_name=safe_account_name,
+					)
 				else:
 					# 记录有失败账号
 					has_any_failed = True
@@ -200,10 +227,14 @@ class Application:
 					balance_changed = None
 					error = user_info.get('error', '未知错误')
 
+				# 上游故障没有账号级错误时，用故障描述兜底
+				if account_upstream_fault and not error:
+					error = account_upstream_fault.message
+
 				# 一次性创建账号结果（通知使用完整名称）
 				account_result = AccountResult(
 					name=full_account_name,
-					status='success' if success else 'failed',
+					status='success' if success else ('upstream_fault' if account_upstream_fault else 'failed'),
 					quota=quota,
 					used=used,
 					balance_changed=balance_changed,
@@ -299,28 +330,15 @@ class Application:
 			self.balance_manager.save_balance_hash(current_balance_hash_dict)
 
 		if need_notify and account_results:
-			# 获取时区配置（处理空字符串的情况）
-			timezone_name = os.getenv('TZ') or self.DEFAULT_TIMEZONE
-			try:
-				timezone = ZoneInfo(timezone_name)
-			except Exception:
-				# 如果时区无效，使用默认时区
-				logger.warning(f'时区 {timezone_name} 无效，使用默认时区 {self.DEFAULT_TIMEZONE}')
-				timezone = ZoneInfo(self.DEFAULT_TIMEZONE)
-
-			# 获取时间戳格式配置（处理空字符串的情况）
-			timestamp_format = os.getenv('TIMESTAMP_FORMAT') or self.DEFAULT_TIMESTAMP_FORMAT
-
 			# 生成带时区的时间戳
-			now = datetime.now(timezone)
-			timestamp = now.strftime(timestamp_format)
-			timezone_abbr = now.strftime('%Z')
+			timestamp, timezone_abbr = self._build_timestamp()
 
-			# 构建结构化通知数据
+			# 构建结构化通知数据（上游服务故障单独计数，不混入失败数）
 			stats = NotificationStats(
 				success_count=success_count,
-				failed_count=total_count - success_count,
+				failed_count=total_count - success_count - upstream_fault_count,
 				total_count=total_count,
+				upstream_fault_count=upstream_fault_count,
 			)
 
 			notification_data = NotificationData(
@@ -328,19 +346,30 @@ class Application:
 				stats=stats,
 				timestamp=timestamp,
 				timezone=timezone_abbr,
+				upstream_fault_message=upstream_fault.message if upstream_fault else None,
 			)
 
 			# 发送通知
 			await self.notification_kit.push_message(notification_data)
 			logger.notify('通知已发送')
+		elif upstream_fault:
+			# 模板通知未触发，但上游故障仍需单独告知一次
+			await self._notify_upstream_fault(
+				fault=upstream_fault,
+				affected_count=upstream_fault_count,
+				total_count=total_count,
+			)
 		elif not account_results:
 			logger.info('没有账号数据，跳过通知')
 
 		# 日志总结
-		logger.info(
-			message=f'最终结果：成功 {success_count}/{total_count}，失败 {total_count - success_count}/{total_count}',
-			tag='结果',
+		result_message = (
+			f'最终结果：成功 {success_count}/{total_count}，'
+			f'失败 {total_count - success_count - upstream_fault_count}/{total_count}'
 		)
+		if upstream_fault_count:
+			result_message += f'，上游故障 {upstream_fault_count}/{total_count}'
+		logger.info(message=result_message, tag='结果')
 
 		# 生成 GitHub Actions Step Summary
 		# 为 summary 创建使用脱敏名称的结果列表
@@ -365,10 +394,52 @@ class Application:
 			notify_sent=need_notify,
 			notify_triggers=trigger_values,
 			notify_reasons=decision_reasons,
+			upstream_fault_message=upstream_fault.message if upstream_fault else None,
 		)
 
-		# 设置退出码
-		sys.exit(0 if success_count > 0 else 1)
+		# 设置退出码：上游服务故障不是账号问题，不应让工作流变红
+		has_real_failure = (total_count - success_count - upstream_fault_count) > 0
+		sys.exit(0 if success_count > 0 or not has_real_failure else 1)
+
+	async def _notify_upstream_fault(
+		self,
+		fault: CheckinService.UpstreamFault,
+		affected_count: int,
+		total_count: int,
+	) -> bool:
+		"""
+		发送上游服务故障通知
+
+		模板通知未被触发（上游故障不算账号失败）时，仍需要单独告知一次故障原因，
+		避免签到全线失败却毫无提示。
+
+		Args:
+			fault: 上游服务故障详情
+			affected_count: 受影响的账号数
+			total_count: 账号总数
+
+		Returns:
+			是否至少有一个通知处理器发送成功
+		"""
+		timestamp, _ = self._build_timestamp()
+
+		title = 'AnyRouter 上游服务故障'
+		content = (
+			f'⏰ 执行时间\n'
+			f'{timestamp}\n\n'
+			f'🚧 上游服务故障\n'
+			f'服务：anyrouter.top\n'
+			f'类型：{fault.reason}\n'
+			f'原因：{fault.message}\n'
+			f'影响：{affected_count}/{total_count} 个账号本次未能签到\n\n'
+			f'这是 AnyRouter 服务端问题，不代表账号凭据失效，本次不计为账号失败。'
+		)
+
+		sent = await self.notification_kit.push_raw_message(title=title, content=content)
+		if sent:
+			logger.notify('上游服务故障通知已发送')
+
+		return sent
 
 	def _load_accounts(self) -> list[dict[str, Any]]:
 		"""

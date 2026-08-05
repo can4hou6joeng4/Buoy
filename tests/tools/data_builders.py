@@ -62,6 +62,7 @@ def build_notification_data(
 	accounts: list[AccountResult],
 	timestamp: str | None = None,
 	timezone: str | None = None,
+	upstream_fault_message: str | None = None,
 ) -> NotificationData:
 	"""
 	构建通知数据
@@ -70,17 +71,20 @@ def build_notification_data(
 		accounts: 账号结果列表
 		timestamp: 时间戳
 		timezone: 时区缩写
+		upstream_fault_message: 上游服务故障描述
 
 	Returns:
 		NotificationData 对象
 	"""
 	success_count = sum(1 for acc in accounts if acc.status == 'success')
-	failed_count = len(accounts) - success_count
+	upstream_fault_count = sum(1 for acc in accounts if acc.status == 'upstream_fault')
+	failed_count = len(accounts) - success_count - upstream_fault_count
 
 	stats = NotificationStats(
 		success_count=success_count,
 		failed_count=failed_count,
 		total_count=len(accounts),
+		upstream_fault_count=upstream_fault_count,
 	)
 
 	# 如果没有提供 timezone，则使用默认时区生成
@@ -93,4 +97,5 @@ def build_notification_data(
 		stats=stats,
 		timestamp=timestamp or datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
 		timezone=timezone,
+		upstream_fault_message=upstream_fault_message,
 	)

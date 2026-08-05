@@ -259,17 +259,27 @@ Fork 本仓库内置的 workflow 默认读取仓库变量 `NOTIFY_TRIGGERS`，�
 
 - `timestamp`: 执行时间
 - `timezone`: 时区（[v1.4.0] 版本起可用）
-- `stats`: 统计数据（`success_count`, `failed_count`, `total_count`）
+- `stats`: 统计数据（`success_count`, `failed_count`, `total_count`, `upstream_fault_count`）
 - `accounts`: 所有账号的结果列表（`name`, `status`, `quota`, `used`, `balance_changed`, `first_seen`, `prev_quota`, `prev_used`, `quota_delta`, `used_delta`, `quota_delta_display`, `used_delta_display`, `error`）
 
 账号状态分组：
 - `success_accounts`: 成功账号列表
-- `failed_accounts`: 失败账号列表
+- `failed_accounts`: 失败账号列表（不含上游服务故障）
 - `has_success`: 有成功的账号
 - `has_failed`: 有失败的账号
 - `all_success`: 所有账号都成功
 - `all_failed`: 所有账号都失败
 - `partial_success`: 部分账号成功
+
+上游服务故障：
+
+> **注意**：<br>
+> AnyRouter 服务端数据库只读、网关异常等故障会让签到接口在返回 HTTP 200 的同时透传服务端错误。
+> 这类账号的 `status` 为 `upstream_fault`，不计入 `failed_count`，也不会让工作流退出码变为 1。
+
+- `upstream_fault_accounts`: 因上游服务故障未能签到的账号列表
+- `has_upstream_fault`: 是否存在上游服务故障
+- `upstream_fault_message`: 上游服务故障的原始错误描述
 
 余额变化追踪（[v1.3.0]+）：
 

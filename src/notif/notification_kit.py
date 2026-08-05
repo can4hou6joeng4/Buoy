@@ -264,7 +264,11 @@ class NotificationKit:
 		"""
 		# 分组账号（因为 Stencil 不支持 == 比较）
 		success_accounts = [acc for acc in data.accounts if acc.status == 'success']
-		failed_accounts = [acc for acc in data.accounts if acc.status != 'success']
+		upstream_fault_accounts = [acc for acc in data.accounts if acc.status == 'upstream_fault']
+		failed_accounts = [
+			acc for acc in data.accounts
+			if acc.status not in ('success', 'upstream_fault')
+		]  # fmt: skip
 
 		# 余额变化相关分组（明确只包含成功的账号）
 		balance_changed_accounts = [
@@ -290,7 +294,7 @@ class NotificationKit:
 
 		# 计算可判断余额的成功账号数量（排除 balance_changed=None 的账号）
 		balance_determinable_count = len(balance_changed_accounts) + len(balance_unchanged_accounts)
-		all_success = data.stats.failed_count == 0
+		all_success = data.stats.failed_count == 0 and data.stats.upstream_fault_count == 0
 		all_balance_changed = (
 			all_success
 			and len(success_accounts) > 0
@@ -311,13 +315,16 @@ class NotificationKit:
 			# 提供分组的账号列表（AccountResult 对象）
 			'success_accounts': success_accounts,
 			'failed_accounts': failed_accounts,
+			'upstream_fault_accounts': upstream_fault_accounts,
 			# 保留完整列表供需要的模板使用
 			'accounts': data.accounts,  # AccountResult 对象列表
 			# 便利变量：布尔标志（使用 stats 进行判断，确保与 NotificationData 的属性一致）
 			'has_success': data.stats.success_count > 0,
 			'has_failed': data.stats.failed_count > 0,
+			'has_upstream_fault': data.stats.upstream_fault_count > 0,
+			'upstream_fault_message': data.upstream_fault_message,
 			'all_success': all_success,
-			'all_failed': data.stats.success_count == 0,
+			'all_failed': data.stats.success_count == 0 and data.stats.upstream_fault_count == 0,
 			'partial_success': data.stats.success_count > 0 and data.stats.failed_count > 0,
 			# 余额变化相关的变量（只包含成功的账号）
 			'balance_changed_accounts': balance_changed_accounts,

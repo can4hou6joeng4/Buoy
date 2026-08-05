@@ -68,6 +68,47 @@ class CheckinService:
 
 			COOKIE_NAMES = ['acw_tc', 'cdn_sec_tc', 'acw_sc__v2']
 
+		class Retry:
+			"""瞬时故障重试配置"""
+
+			# 签到请求最大尝试次数（含首次）
+			CHECKIN_MAX_ATTEMPTS = 3
+
+			# WAF cookies 最大尝试次数（含首次），浏览器启动开销大，次数更保守
+			WAF_MAX_ATTEMPTS = 2
+
+			# 每次重试前的等待秒数
+			DELAY_SECONDS = 5
+
+		class Upstream:
+			"""上游服务故障识别配置"""
+
+			# 签到接口返回 HTTP 200，但响应体里携带的服务端错误特征
+			# 命中任意一项即判定为 AnyRouter 服务端故障，而非账号问题
+			ERROR_MARKERS = (
+				'lock_write_growth',
+				'hy000',
+				'mysql server',
+				'read-only',
+				'read only',
+				'database is locked',
+				'too many connections',
+				'deadlock found',
+				'bad gateway',
+				'service unavailable',
+				'gateway timeout',
+			)
+
+	@dataclass(frozen=True)
+	class UpstreamFault:
+		"""上游服务故障（AnyRouter 服务端问题，不应记为账号失败）"""
+
+		# 稳定的机器可读原因，如 upstream_database_error、upstream_server_error
+		reason: str
+
+		# 供日志、通知和 summary 使用的可读描述
+		message: str
+
 	@dataclass(frozen=True)
 	class InfrastructureCheckResult:
 		"""AnyRouter 基础设施预检结果"""
@@ -166,11 +207,33 @@ class CheckinService:
 
 		return 'unknown_infrastructure_error', f'Infrastructure check failed for {self.Config.URLs.LOGIN}: {error_text}'
 
+	def _detect_upstream_fault(self, error_msg: str) -> UpstreamFault | None:
+		"""
+		判断签到接口的业务错误是否来自 AnyRouter 服务端
+
+		签到接口在服务端数据库只读、网关异常时仍会返回 HTTP 200，
+		把原始错误透传在响应体里。这类错误与账号凭据无关，不应记为账号失败。
+
+		Args:
+		    error_msg: 签到响应中的错误文案
+
+		Returns:
+		    UpstreamFault | None: 命中上游故障特征时返回故障详情，否则返回 None
+		"""
+		lowered = error_msg.lower()
+		if any(marker in lowered for marker in self.Config.Upstream.ERROR_MARKERS):
+			return self.UpstreamFault(
+				reason='upstream_database_error',
+				message=error_msg,
+			)
+
+		return None
+
 	async def check_in_account(
 		self,
 		account_info: dict[str, Any],
 		account_index: int,
-	) -> tuple[bool, dict[str, Any] | None]:
+	) -> tuple[bool, dict[str, Any] | None, UpstreamFault | None]:
 		"""
 		为单个账号执行签到操作
 
@@ -179,7 +242,8 @@ class CheckinService:
 		    account_index: 账号索引
 
 		Returns:
-		    tuple[bool, dict[str, Any] | None]: (是否签到成功, 用户信息)
+		    tuple[bool, dict[str, Any] | None, UpstreamFault | None]:
+		        (是否签到成功, 用户信息, 上游服务故障；无上游故障时为 None)
 		"""
 		privacy_handler = PrivacyHandler(PrivacyHandler.should_show_sensitive_info())
 		account_name = privacy_handler.get_safe_account_name(account_info, account_index)
@@ -192,19 +256,19 @@ class CheckinService:
 		# 未找到 API 用户标识符
 		if not api_user:
 			logger.error('未找到 API 用户标识符', account_name)
-			return False, None
+			return False, None, None
 
 		# 解析用户 cookies
 		user_cookies = self._parse_cookies(cookies_data)
 		if not user_cookies:
 			logger.error('配置格式无效', account_name)
-			return False, None
+			return False, None, None
 
 		# 步骤1：获取 WAF cookies
 		waf_cookies = await self._get_waf_cookies_with_playwright(account_name)
 		if not waf_cookies:
 			logger.error('无法获取 WAF cookies', account_name)
-			return False, None
+			return False, None, None
 
 		# 步骤2：使用 httpx 进行 API 请求
 		async with httpx.AsyncClient(http2=True, timeout=30.0) as client:
@@ -237,7 +301,7 @@ class CheckinService:
 					logger.info(user_info['display'], account_name)
 				elif user_info:
 					logger.warning(user_info.get('error', '未知错误'), account_name)
-					return False, user_info
+					return False, user_info, None
 
 				logger.debug(
 					message='执行签到',
@@ -252,10 +316,10 @@ class CheckinService:
 					'X-Requested-With': 'XMLHttpRequest'
 				})  # fmt: skip
 
-				response = await client.post(
-					url=self.Config.URLs.CHECKIN,
+				response = await self._post_checkin_with_retry(
+					client=client,
 					headers=checkin_headers,
-					timeout=30,
+					account_name=account_name,
 				)
 
 				logger.debug(
@@ -264,32 +328,48 @@ class CheckinService:
 					account_name=account_name,
 				)
 
+				# 签到接口 5xx 属于服务端故障，与账号凭据无关
+				if response.status_code >= 500:
+					fault = self.UpstreamFault(
+						reason='upstream_server_error',
+						message=f'签到接口返回 HTTP {response.status_code}',
+					)
+					logger.warning(f'上游服务故障 - {fault.message}', account_name=account_name)
+					return False, user_info, fault
+
 				# HTTP 请求失败
 				if response.status_code != 200:
 					logger.error(f'签到失败 - HTTP {response.status_code}', account_name)
-					return False, user_info
+					return False, user_info, None
 
 				# 处理响应结果
 				try:
 					result = response.json()
 					if result.get('ret') == 1 or result.get('code') == 0 or result.get('success'):
 						logger.success('签到成功!', account_name)
-						return True, user_info
+						return True, user_info, None
 
 					# 签到失败
-					error_msg = result.get('msg', result.get('message', '未知错误'))
+					error_msg = str(result.get('msg', result.get('message', '未知错误')))
+
+					# 响应体透传了服务端数据库/网关错误，归类为上游故障
+					fault = self._detect_upstream_fault(error_msg)
+					if fault:
+						logger.warning(f'上游服务故障 - {error_msg}', account_name=account_name)
+						return False, user_info, fault
+
 					logger.error(f'签到失败 - {error_msg}', account_name)
-					return False, user_info
+					return False, user_info, None
 
 				except json.JSONDecodeError:
 					# 如果不是 JSON 响应，检查是否包含成功标识
 					if 'success' in response.text.lower():
 						logger.success('签到成功!', account_name)
-						return True, user_info
+						return True, user_info, None
 
 					# 签到失败
 					logger.error('签到失败 - 无效响应格式', account_name)
-					return False, user_info
+					return False, user_info, None
 
 			except Exception as e:
 				logger.error(
@@ -297,11 +377,84 @@ class CheckinService:
 					account_name=account_name,
 					exc_info=True,
 				)
-				return False, None
+				return False, None, None
+
+	async def _post_checkin_with_retry(
+		self,
+		client,
+		headers: dict[str, str],
+		account_name: str,
+	):
+		"""
+		执行签到请求，对超时这类瞬时网络故障做有限重试
+
+		基础设施预检只覆盖签到开始前的可达性，单个账号的签到请求仍可能撞上
+		网络抖动。这里只重试超时，凭据错误、业务错误一律交由调用方按原逻辑处理。
+
+		Args:
+		    client: httpx 客户端
+		    headers: 签到请求头
+		    account_name: 账号名称（用于日志）
+
+		Returns:
+		    httpx 响应对象
+
+		Raises:
+		    httpx.TimeoutException: 所有尝试都超时时抛出最后一次异常
+		"""
+		max_attempts = self.Config.Retry.CHECKIN_MAX_ATTEMPTS
+		delay_seconds = self.Config.Retry.DELAY_SECONDS
+		last_error: httpx.TimeoutException | None = None
+
+		for attempt in range(1, max_attempts + 1):
+			try:
+				return await client.post(
+					url=self.Config.URLs.CHECKIN,
+					headers=headers,
+					timeout=30,
+				)
+			except httpx.TimeoutException as exc:
+				last_error = exc
+				if attempt < max_attempts:
+					logger.warning(
+						message=f'签到请求超时，{delay_seconds} 秒后重试 {attempt + 1}/{max_attempts}',
+						account_name=account_name,
+					)
+					await asyncio.sleep(delay_seconds)
+
+		assert last_error is not None
+		raise last_error
 
 	async def _get_waf_cookies_with_playwright(self, account_name: str) -> dict[str, str] | None:
 		"""
-		使用 Playwright 获取 WAF cookies（无痕模式）
+		获取 WAF cookies，浏览器超时等瞬时故障会有限重试
+
+		Args:
+		    account_name: 账号名称（用于日志）
+
+		Returns:
+		    dict[str, str] | None: WAF cookies 字典，重试耗尽仍失败返回 None
+		"""
+		max_attempts = self.Config.Retry.WAF_MAX_ATTEMPTS
+		delay_seconds = self.Config.Retry.DELAY_SECONDS
+
+		for attempt in range(1, max_attempts + 1):
+			waf_cookies = await self._fetch_waf_cookies_once(account_name)
+			if waf_cookies:
+				return waf_cookies
+
+			if attempt < max_attempts:
+				logger.warning(
+					message=f'获取 WAF cookies 失败，{delay_seconds} 秒后重试 {attempt + 1}/{max_attempts}',
+					account_name=account_name,
+				)
+				await asyncio.sleep(delay_seconds)
+
+		return None
+
+	async def _fetch_waf_cookies_once(self, account_name: str) -> dict[str, str] | None:
+		"""
+		使用 Playwright 获取 WAF cookies（无痕模式），单次尝试
 
 		Args:
 		    account_name: 账号名称（用于日志）
