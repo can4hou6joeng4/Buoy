@@ -158,7 +158,7 @@ uv run python scripts/refresh_anyrouter_credentials.py \
   --show-account-names
 ```
 
-排除已由账号所有者确认封禁的第 9 个账号：
+如果输入文件仍是尚未清理的原始 10 账号数组，可一次性排除已由账号所有者确认封禁的第 9 个账号：
 
 ```bash
 uv run python scripts/refresh_anyrouter_credentials.py \
@@ -166,6 +166,9 @@ uv run python scripts/refresh_anyrouter_credentials.py \
   --output anyrouter-refreshed-accounts.json \
   --show-account-names
 ```
+
+> 该参数按当前输入数组的序号工作。完成隔离后，活动文件只剩 9 个有效账号，后续刷新不要再传
+> `--exclude-index 9`，否则会误排除新的第 9 个有效账号。
 
 也可以显式提供输入文件：
 
