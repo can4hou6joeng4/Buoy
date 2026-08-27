@@ -269,6 +269,11 @@ class NotificationKit:
 			acc for acc in data.accounts
 			if acc.status not in ('success', 'upstream_fault')
 		]  # fmt: skip
+		# 凭据失效属于失败的子集，单独分组让模板能给出「去换 cookie」而不是笼统的失败
+		credential_expired_accounts = [
+			acc for acc in data.accounts
+			if acc.status == 'credential_expired'
+		]  # fmt: skip
 
 		# 余额变化相关分组（明确只包含成功的账号）
 		balance_changed_accounts = [
@@ -316,6 +321,7 @@ class NotificationKit:
 			'success_accounts': success_accounts,
 			'failed_accounts': failed_accounts,
 			'upstream_fault_accounts': upstream_fault_accounts,
+			'credential_expired_accounts': credential_expired_accounts,
 			# 保留完整列表供需要的模板使用
 			'accounts': data.accounts,  # AccountResult 对象列表
 			# 便利变量：布尔标志（使用 stats 进行判断，确保与 NotificationData 的属性一致）
@@ -323,6 +329,10 @@ class NotificationKit:
 			'has_failed': data.stats.failed_count > 0,
 			'has_upstream_fault': data.stats.upstream_fault_count > 0,
 			'upstream_fault_message': data.upstream_fault_message,
+			'has_credential_expired': len(credential_expired_accounts) > 0,
+			'all_credential_expired': (
+				len(credential_expired_accounts) > 0 and len(credential_expired_accounts) == len(data.accounts)
+			),
 			'all_success': all_success,
 			'all_failed': data.stats.success_count == 0 and data.stats.upstream_fault_count == 0,
 			'partial_success': data.stats.success_count > 0 and data.stats.failed_count > 0,

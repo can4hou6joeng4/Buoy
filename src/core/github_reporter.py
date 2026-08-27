@@ -29,6 +29,7 @@ class GitHubReporter:
 		notify_triggers: list[str],
 		notify_reasons: list[str],
 		upstream_fault_message: str | None = None,
+		credential_fault_message: str | None = None,
 	):
 		"""
 		生成 GitHub Actions Step Summary
@@ -41,6 +42,7 @@ class GitHubReporter:
 			notify_triggers: 当前生效的通知触发器
 			notify_reasons: 本次通知发送/跳过的原因
 			upstream_fault_message: 上游服务故障描述，无故障时为 None
+			credential_fault_message: 凭据失效描述，无凭据失效时为 None
 		"""
 		# 检查是否在 GitHub Actions 环境中运行
 		summary_file = os.getenv(self.ENV_GITHUB_STEP_SUMMARY)
@@ -56,12 +58,16 @@ class GitHubReporter:
 				acc for acc in account_results
 				if acc.status not in ('success', 'upstream_fault')
 			]  # fmt: skip
+			# 凭据失效是失败的子集，单独列出以便给出「去换 cookie」的处置指引
+			credential_accounts = [acc for acc in failed_accounts if acc.status == 'credential_expired']
 
 			failed_count = len(failed_accounts)
 			upstream_fault_count = len(upstream_fault_accounts)
 			has_success = len(success_accounts) > 0
 			has_failed = failed_count > 0
 			has_upstream_fault = upstream_fault_count > 0
+			has_credential_fault = len(credential_accounts) > 0
+			all_credentials_expired = has_credential_fault and len(credential_accounts) == len(account_results)
 			all_success = not has_failed and not has_upstream_fault
 
 			# 构建 markdown 字符串
@@ -74,6 +80,8 @@ class GitHubReporter:
 			# 状态标题
 			if all_success:
 				lines.append('**✅ 所有账号全部签到成功！**')
+			elif all_credentials_expired:
+				lines.append('**🔑 所有账号凭据已失效，需要更新 cookie**')
 			elif not has_success and has_upstream_fault and not has_failed:
 				lines.append('**🚧 上游服务故障，本次未能签到（非账号问题）**')
 			elif has_success and (has_failed or has_upstream_fault):
@@ -90,6 +98,8 @@ class GitHubReporter:
 			lines.append(f'- **失败比例**：{failed_count}/{total_count}')
 			if has_upstream_fault:
 				lines.append(f'- **上游故障**：{upstream_fault_count}/{total_count}')
+			if has_credential_fault:
+				lines.append(f'- **凭据失效**：{len(credential_accounts)}/{total_count}')
 			lines.append('')
 
 			lines.append('### 通知决策')
@@ -107,6 +117,18 @@ class GitHubReporter:
 				lines.append(f'- **受影响账号**：{", ".join(acc.name for acc in upstream_fault_accounts)}')
 				lines.append('')
 				lines.append('> 这是 AnyRouter 服务端问题，不代表账号凭据失效，未计入失败数。')
+				lines.append('')
+
+			# 账号凭据失效
+			if has_credential_fault:
+				lines.append('### 🔑 账号凭据失效')
+				if credential_fault_message:
+					lines.append(f'- **失效原因**：{credential_fault_message}')
+				lines.append(f'- **受影响账号**：{", ".join(acc.name for acc in credential_accounts)}')
+				lines.append('')
+				if all_credentials_expired:
+					lines.append('> 全部账号同时失效，通常是 session 到期或被服务端统一注销。')
+				lines.append('> 处置：重新登录获取 session cookie 并更新配置，或补充 username/password 以自动刷新。')
 				lines.append('')
 
 			# 成功账号表格
@@ -141,7 +163,8 @@ class GitHubReporter:
 					lines.append('| 账号 | 状态 |')
 					lines.append('| :----- | :----- |')
 					for account in failed_accounts:
-						lines.append(f'|{account.name}|❌ 签到失败|')
+						status_text = '🔑 凭据失效' if account.status == 'credential_expired' else '❌ 签到失败'
+						lines.append(f'|{account.name}|{status_text}|')
 
 			# 拼接成最终字符串
 			summary_content = '\n'.join(lines)

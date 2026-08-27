@@ -8,7 +8,8 @@ class AccountResult:
 	# 账号名称
 	name: str
 
-	# 处理状态：success、failed 或 upstream_fault（AnyRouter 服务端故障，不计为账号失败）
+	# 处理状态：success、failed、credential_expired（凭据失效，仍计为失败）
+	# 或 upstream_fault（AnyRouter 服务端故障，不计为账号失败）
 	status: str
 
 	# 当前余额，成功时才有

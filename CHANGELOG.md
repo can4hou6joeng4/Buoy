@@ -9,6 +9,9 @@
 ## [Unreleased]
 
 #### Add
+* 新增账号凭据失效的语义化识别：`/api/user/self` 返回 401/403 或响应体报「未登录」时，错误信息由裸 `HTTP 401` 改为「账号凭据已失效（HTTP 401）：需重新获取 session cookie，或为账号配置 username/password 自动刷新」，账号状态记为 `credential_expired`（仍计入失败数）。
+* 新增凭据集体失效的聚合告警：当所有账号（≥2 个）都因凭据失效而未签到时，只推送一条 `AnyRouter 账号凭据集体失效` 通知并给出处置动作，替代 N 条内容相同的逐账号失败通知；仍受 `NOTIFY_TRIGGERS` 约束。
+* 新增 `credential_expired_accounts`、`has_credential_expired`、`all_credential_expired` 模板变量，Actions Summary 同步展示「🔑 账号凭据失效」区块与失效账号清单。
 * 新增上游服务故障识别：签到接口返回 HTTP 200 但透传服务端错误（如 `Error 1290 (HY000) ... LOCK_WRITE_GROWTH` 数据库只读）或返回 5xx 时，账号状态记为 `upstream_fault`，不计入失败数、不影响工作流退出码。
 * 新增 `upstream_fault_accounts`、`has_upstream_fault`、`upstream_fault_message` 模板变量与 `stats.upstream_fault_count` 统计字段，各平台默认模板同步展示上游故障区块。
 * 模板通知未被触发时，上游服务故障会单独推送一条通知，说明这不是账号凭据失效。

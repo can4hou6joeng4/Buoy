@@ -119,6 +119,13 @@ class CheckinService:
 				'无效的用户',
 			)
 
+			# 凭据失效后需要执行的动作。裸 `HTTP 401` 不告诉任何人下一步该做什么，
+			# 通知和 summary 里必须带上这句，才能从"签到失败"直接指向"去换 cookie"。
+			ACTION_HINT = '需重新获取 session cookie，或为账号配置 username/password 自动刷新'
+
+			# 判定为凭据失效的稳定原因，供上层聚合告警使用
+			FAILURE_REASONS = ('authentication_failed', 'credential_refresh_failed')
+
 	@dataclass(frozen=True)
 	class UpstreamFault:
 		"""上游服务故障（AnyRouter 服务端问题，不应记为账号失败）"""
@@ -321,7 +328,7 @@ class CheckinService:
 				if needs_refresh:
 					if not has_login_credentials:
 						logger.warning(
-							user_info.get('error', '账号凭据已失效') if user_info else '账号凭据已失效',
+							(user_info or {}).get('error') or self._build_credential_error('凭据缺失'),
 							account_name=account_name,
 						)
 						return False, user_info, None
@@ -703,7 +710,7 @@ class CheckinService:
 			if response.status_code in (401, 403):
 				return {
 					'success': False,
-					'error': f'获取用户信息失败：HTTP {response.status_code}',
+					'error': self._build_credential_error(f'HTTP {response.status_code}'),
 					'reason': 'authentication_failed',
 				}
 
@@ -727,10 +734,11 @@ class CheckinService:
 			# API 响应失败
 			if not data.get('success'):
 				message = str(data.get('message', '获取用户信息失败：API 错误'))
+				reason = self._classify_user_info_failure(message)
 				return {
 					'success': False,
-					'error': message,
-					'reason': self._classify_user_info_failure(message),
+					'error': self._build_credential_error(message) if reason == 'authentication_failed' else message,
+					'reason': reason,
 				}
 
 			# 成功获取用户信息
@@ -772,6 +780,18 @@ class CheckinService:
 		if any(marker in lowered for marker in self.Config.Authentication.ERROR_MARKERS):
 			return 'authentication_failed'
 		return 'api_error'
+
+	def _build_credential_error(self, detail: str) -> str:
+		"""
+		把裸状态码或服务端文案包装成带处置动作的凭据失效说明
+
+		Args:
+		    detail: 触发判定的原始细节，如 `HTTP 401`、`未登录或登录已过期`
+
+		Returns:
+		    str: 通知与 summary 共用的可执行错误描述
+		"""
+		return f'账号凭据已失效（{detail}）：{self.Config.Authentication.ACTION_HINT}'
 
 	@staticmethod
 	def _extract_account_name(user_data: dict[str, Any]) -> str | None:

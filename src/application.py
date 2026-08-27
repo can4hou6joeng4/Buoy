@@ -24,6 +24,11 @@ class Application:
 	# 默认时间戳格式
 	DEFAULT_TIMESTAMP_FORMAT = '%Y-%m-%d %H:%M:%S'
 
+	# 聚合「凭据集体失效」告警所需的最少账号数。
+	# 单账号失效无从判断是自身 cookie 过期还是服务端统一注销，也没有重复行可折叠，
+	# 仍走逐账号模板通知。
+	MIN_ACCOUNTS_FOR_CREDENTIAL_AGGREGATION = 2
+
 	@staticmethod
 	def _format_signed_amount(amount: float) -> str:
 		"""格式化带正负号的金额展示值"""
@@ -172,6 +177,8 @@ class Application:
 		has_any_first_seen = False  # 是否有新增账号首次建立余额基线
 		upstream_fault_count = 0  # 因上游服务故障未能签到的账号数
 		upstream_fault: CheckinService.UpstreamFault | None = None  # 首个上游服务故障详情
+		credential_fault_count = 0  # 因凭据失效未能签到的账号数（属于失败的一部分）
+		credential_fault_message: str | None = None  # 首个凭据失效详情
 
 		for i, account in enumerate(accounts):
 			try:
@@ -194,6 +201,14 @@ class Application:
 				first_seen = False
 				error = None
 
+				# 凭据失效是失败的一个子类：仍计入失败数，但可被聚合成单条可执行告警
+				is_credential_fault = (
+					not success
+					and not account_upstream_fault
+					and user_info is not None
+					and user_info.get('reason') in CheckinService.Config.Authentication.FAILURE_REASONS
+				)
+
 				if success:
 					success_count += 1
 				elif account_upstream_fault:
@@ -209,6 +224,10 @@ class Application:
 				else:
 					# 记录有失败账号
 					has_any_failed = True
+					if is_credential_fault and user_info is not None:
+						credential_fault_count += 1
+						if credential_fault_message is None:
+							credential_fault_message = user_info.get('error')
 					logger.notify('失败，将发送通知', safe_account_name)
 
 				# 收集余额数据和处理结果
@@ -275,10 +294,19 @@ class Application:
 				if account_upstream_fault and not error:
 					error = account_upstream_fault.message
 
+				if success:
+					status = 'success'
+				elif account_upstream_fault:
+					status = 'upstream_fault'
+				elif is_credential_fault:
+					status = 'credential_expired'
+				else:
+					status = 'failed'
+
 				# 一次性创建账号结果（通知使用完整名称）
 				account_result = AccountResult(
 					name=full_account_name,
-					status='success' if success else ('upstream_fault' if account_upstream_fault else 'failed'),
+					status=status,
 					quota=quota,
 					used=used,
 					balance_changed=balance_changed,
@@ -316,6 +344,15 @@ class Application:
 				account_results.append(account_result)
 
 		credentials_export_succeeded = self._export_refreshed_accounts(accounts)
+
+		# 全部账号都因凭据失效而未签到：这是一次系统性事件（session 满 30 天过期，
+		# 或服务端统一注销），逐账号重复同一条错误没有信息量，聚合成一条可执行告警。
+		all_credentials_expired = (
+			total_count >= self.MIN_ACCOUNTS_FOR_CREDENTIAL_AGGREGATION
+			and success_count == 0
+			and upstream_fault_count == 0
+			and credential_fault_count == total_count
+		)
 
 		# 成功提醒只在所有账号都完成额度变化时触发，失败提醒仍可单独触发
 		all_balance_changed = (
@@ -379,25 +416,33 @@ class Application:
 			# 生成带时区的时间戳
 			timestamp, timezone_abbr = self._build_timestamp()
 
-			# 构建结构化通知数据（上游服务故障单独计数，不混入失败数）
-			stats = NotificationStats(
-				success_count=success_count,
-				failed_count=total_count - success_count - upstream_fault_count,
-				total_count=total_count,
-				upstream_fault_count=upstream_fault_count,
-			)
+			if all_credentials_expired:
+				# 凭据集体失效：只发一条聚合告警，替代 N 条内容相同的逐账号失败通知
+				await self._notify_credential_fault(
+					detail=credential_fault_message,
+					affected_count=credential_fault_count,
+					total_count=total_count,
+				)
+			else:
+				# 构建结构化通知数据（上游服务故障单独计数，不混入失败数）
+				stats = NotificationStats(
+					success_count=success_count,
+					failed_count=total_count - success_count - upstream_fault_count,
+					total_count=total_count,
+					upstream_fault_count=upstream_fault_count,
+				)
 
-			notification_data = NotificationData(
-				accounts=account_results,
-				stats=stats,
-				timestamp=timestamp,
-				timezone=timezone_abbr,
-				upstream_fault_message=upstream_fault.message if upstream_fault else None,
-			)
+				notification_data = NotificationData(
+					accounts=account_results,
+					stats=stats,
+					timestamp=timestamp,
+					timezone=timezone_abbr,
+					upstream_fault_message=upstream_fault.message if upstream_fault else None,
+				)
 
-			# 发送通知
-			await self.notification_kit.push_message(notification_data)
-			logger.notify('通知已发送')
+				# 发送通知
+				await self.notification_kit.push_message(notification_data)
+				logger.notify('通知已发送')
 		elif upstream_fault:
 			# 模板通知未触发，但上游故障仍需单独告知一次
 			await self._notify_upstream_fault(
@@ -415,6 +460,8 @@ class Application:
 		)
 		if upstream_fault_count:
 			result_message += f'，上游故障 {upstream_fault_count}/{total_count}'
+		if credential_fault_count:
+			result_message += f'（其中凭据失效 {credential_fault_count}/{total_count}）'
 		logger.info(message=result_message, tag='结果')
 
 		# 生成 GitHub Actions Step Summary
@@ -441,6 +488,7 @@ class Application:
 			notify_triggers=trigger_values,
 			notify_reasons=decision_reasons,
 			upstream_fault_message=upstream_fault.message if upstream_fault else None,
+			credential_fault_message=credential_fault_message if credential_fault_count else None,
 		)
 
 		# 设置退出码：上游服务故障不是账号问题，不应让工作流变红
@@ -487,6 +535,48 @@ class Application:
 		sent = await self.notification_kit.push_raw_message(title=title, content=content)
 		if sent:
 			logger.notify('上游服务故障通知已发送')
+
+		return sent
+
+	async def _notify_credential_fault(
+		self,
+		detail: str | None,
+		affected_count: int,
+		total_count: int,
+	) -> bool:
+		"""
+		发送凭据集体失效的聚合通知
+
+		所有账号在同一次运行里认证失败时，逐账号推送 N 条相同的错误既刷屏又掩盖了
+		「这是一次系统性失效」这个关键信息。这里用一条通知替代，并直接给出处置动作。
+
+		Args:
+			detail: 首个账号的凭据失效描述，无法取得时留空
+			affected_count: 凭据失效的账号数
+			total_count: 账号总数
+
+		Returns:
+			是否至少有一个通知处理器发送成功
+		"""
+		timestamp, _ = self._build_timestamp()
+
+		title = 'AnyRouter 账号凭据集体失效'
+		content = (
+			f'⏰ 执行时间\n'
+			f'{timestamp}\n\n'
+			f'🔑 账号凭据集体失效\n'
+			f'服务：anyrouter.top\n'
+			f'影响：{affected_count}/{total_count} 个账号本次全部认证失败\n'
+			f'原因：{detail or CheckinService.Config.Authentication.ACTION_HINT}\n\n'
+			f'全部账号在同一次运行中失效，通常是 session 到期或被服务端统一注销，'
+			f'而不是某个账号单独出了问题。\n'
+			f'处置：重新登录 anyrouter.top 获取新的 session cookie 并更新配置；'
+			f'或为账号补充 username/password，后续失效时可自动刷新。'
+		)
+
+		sent = await self.notification_kit.push_raw_message(title=title, content=content)
+		if sent:
+			logger.notify(f'{affected_count}/{total_count} 个账号凭据失效，已聚合为一条通知')
 
 		return sent
 

@@ -330,6 +330,16 @@ Fork 本仓库内置的 workflow 默认读取仓库变量 `NOTIFY_TRIGGERS`，�
 - `has_upstream_fault`: 是否存在上游服务故障
 - `upstream_fault_message`: 上游服务故障的原始错误描述
 
+账号凭据失效：
+
+> **注意**：<br>
+> session 过期或被服务端注销时，账号的 `status` 为 `credential_expired`。它仍属于失败（计入 `failed_count`、`failed_accounts`），只是单独分组以便给出「重新获取 cookie」的处置指引。
+> 当**所有**账号（≥2 个）都因凭据失效而未签到时，会改为推送一条聚合告警，不再逐账号重复同一条错误。
+
+- `credential_expired_accounts`: 因凭据失效未能签到的账号列表
+- `has_credential_expired`: 是否存在凭据失效的账号
+- `all_credential_expired`: 是否所有账号都凭据失效
+
 余额变化追踪（[v1.3.0]+）：
 
 > **注意**：<br>
