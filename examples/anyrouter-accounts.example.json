@@ -1,0 +1,10 @@
+[
+  {
+    "username": "your-login-username-or-email",
+    "password": "your-login-password"
+  },
+  {
+    "username": "another-login-username-or-email",
+    "password": "another-login-password"
+  }
+]

@@ -27,6 +27,8 @@ jobs:
       ANYROUTER_ACCOUNTS: ${{ secrets.ANYROUTER_ACCOUNTS }}
       # 是否显示敏感信息
       SHOW_SENSITIVE_INFO: ${{ secrets.SHOW_SENSITIVE_INFO }}
+      # 仅显示真实账号名称，不公开余额等其他敏感信息
+      SHOW_ACCOUNT_NAMES: ${{ vars.SHOW_ACCOUNT_NAMES || 'false' }}
       # 通知配置
       DINGTALK_NOTIF_CONFIG: ${{ secrets.DINGTALK_NOTIF_CONFIG }}
       EMAIL_NOTIF_CONFIG: ${{ secrets.EMAIL_NOTIF_CONFIG }}

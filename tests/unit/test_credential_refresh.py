@@ -42,7 +42,12 @@ async def test_expired_session_refreshes_credentials_and_continues_checkin():
 			status=200,
 			json_data={
 				'success': True,
-				'data': {'quota': DEFAULT_QUOTA, 'used_quota': DEFAULT_USED_QUOTA},
+				'data': {
+					'quota': DEFAULT_QUOTA,
+					'used_quota': DEFAULT_USED_QUOTA,
+					'display_name': '服务端名称',
+					'password': 'must-not-be-forwarded',
+				},
 			},
 		)
 
@@ -65,8 +70,12 @@ async def test_expired_session_refreshes_credentials_and_continues_checkin():
 	assert fault is None
 	assert get_count == 2
 	assert service.refreshed_credentials_count == 1
+	assert service.updated_accounts_count == 1
 	assert account['api_user'] == '12345'
 	assert account['cookies'] == {'session': 'refreshed-session'}
+	assert account['name'] == '服务端名称'
+	assert user_info['account_name'] == '服务端名称'
+	assert 'password' not in user_info
 	assert client.cookies.get('session') == 'refreshed-session'
 	login_call = next(
 		call for call in client.post.await_args_list if call.kwargs['url'] == service.Config.URLs.AUTH_LOGIN
@@ -152,6 +161,18 @@ def test_user_info_failure_classification(message, expected):
 	assert CheckinService()._classify_user_info_failure(message) == expected
 
 
+@pytest.mark.parametrize(
+	'user_data,expected',
+	[
+		({'display_name': ' 显示名 ', 'username': '用户名'}, '显示名'),
+		({'display_name': '', 'username': ' 用户名 '}, '用户名'),
+		({'display_name': None, 'username': ''}, None),
+	],
+)
+def test_account_name_is_extracted_from_whitelisted_fields(user_data, expected):
+	assert CheckinService._extract_account_name(user_data) == expected
+
+
 def test_login_only_account_is_valid_for_automatic_bootstrap(monkeypatch):
 	monkeypatch.setenv(
 		'ANYROUTER_ACCOUNTS',
@@ -168,6 +189,7 @@ def test_login_only_account_is_valid_for_automatic_bootstrap(monkeypatch):
 def test_refreshed_accounts_are_exported_with_restricted_permissions(monkeypatch, tmp_path):
 	app = Application()
 	app.checkin_service.refreshed_credentials_count = 1
+	app.checkin_service.updated_accounts_count = 1
 	target = tmp_path / 'refreshed-accounts.json'
 	monkeypatch.setenv(CheckinService.Config.Env.REFRESHED_ACCOUNTS_FILE, str(target))
 	accounts = [
@@ -188,6 +210,7 @@ def test_refreshed_accounts_are_exported_with_restricted_permissions(monkeypatch
 def test_refreshed_accounts_are_not_exported_when_prefix_overrides_exist(monkeypatch, tmp_path):
 	app = Application()
 	app.checkin_service.refreshed_credentials_count = 1
+	app.checkin_service.updated_accounts_count = 1
 	app.has_prefix_account_configs = True
 	target = tmp_path / 'refreshed-accounts.json'
 	monkeypatch.setenv(CheckinService.Config.Env.REFRESHED_ACCOUNTS_FILE, str(target))

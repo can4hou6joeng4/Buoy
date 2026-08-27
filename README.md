@@ -107,6 +107,10 @@ jobs:
 - `api_user`：API 用户标识；配置 `username/password` 时可省略，由工作流首次运行自动获取
 - `username` / `password`（可选，成对配置）：仅在 `session` 缺失或明确失效时用于自动刷新凭据
 
+完整接口链路、独立刷新工具和封禁账号处理方式见
+[AnyRouter 账号密码换取签到凭据流程](docs/anyrouter-credential-login-flow.md)。可直接使用的输入模板位于
+[`examples/anyrouter-accounts.example.json`](examples/anyrouter-accounts.example.json)。
+
 #### 凭据自动刷新（Fork 定时工作流）
 
 内置的 Fork 工作流仍负责每 6 小时执行签到。启用自动刷新后，正常情况下继续直接使用已有
@@ -147,6 +151,9 @@ jobs:
 > 兼容性说明：仓库内置的 Fork 工作流只加载 `ANYROUTER_ACCOUNTS`，并以它作为自动写回的唯一持久化目标；
 > 已经存储在 Environment 中的 `ANYROUTER_ACCOUNT_*` Secret 不会被该工作流读取。复合 Action 和本地运行仍支持
 > 下文的 `ANYROUTER_ACCOUNT_*` 前缀配置，但启用自动写回时不要同时向进程注入这类覆盖值。
+
+如需在公开 Actions 日志中显示服务端真实账号名称，但继续隐藏余额，请设置 Environment Variable
+`SHOW_ACCOUNT_NAMES=true`。真实名称优先取 `/api/user/self` 的 `display_name`，其次取 `username`。
 
 支持两种配置方式，可以同时使用（账号会自动合并并去重）：
 

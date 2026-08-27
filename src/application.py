@@ -34,7 +34,10 @@ class Application:
 		"""初始化应用及所有服务"""
 		# 初始化各个功能模块
 		self.checkin_service = CheckinService()
-		self.privacy_handler = PrivacyHandler(PrivacyHandler.should_show_sensitive_info())
+		self.privacy_handler = PrivacyHandler(
+			PrivacyHandler.should_show_sensitive_info(),
+			PrivacyHandler.should_show_account_names(),
+		)
 		self.balance_manager = BalanceManager(Path(CheckinService.Config.File.BALANCE_HASH_NAME))
 		self.notify_trigger_manager = NotifyTriggerManager()
 		self.notification_kit = NotificationKit()
@@ -65,7 +68,7 @@ class Application:
 
 	def _export_refreshed_accounts(self, accounts: list[dict[str, Any]]) -> bool:
 		"""仅在凭据发生刷新时，把下一次运行所需配置写入受限临时文件。"""
-		if self.checkin_service.refreshed_credentials_count == 0:
+		if self.checkin_service.updated_accounts_count == 0:
 			return True
 
 		target_value = os.getenv(CheckinService.Config.Env.REFRESHED_ACCOUNTS_FILE)
@@ -98,7 +101,7 @@ class Application:
 			return False
 
 		logger.info(
-			f'已准备 {self.checkin_service.refreshed_credentials_count} 个刷新账号的安全写回文件',
+			f'已准备 {self.checkin_service.updated_accounts_count} 个更新账号的安全写回文件',
 			tag='凭据',
 		)
 		return True

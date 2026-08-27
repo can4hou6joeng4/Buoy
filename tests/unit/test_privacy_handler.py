@@ -109,3 +109,16 @@ class TestPrivacyHandler:
 			# 应该隐藏数字
 			assert '余额正常' in display or ':money:' in display
 			assert str(quota) not in display
+
+	def test_account_names_can_be_shown_without_exposing_balance(self, monkeypatch: pytest.MonkeyPatch) -> None:
+		monkeypatch.setenv('REPO_VISIBILITY', 'public')
+		monkeypatch.setenv('SHOW_ACCOUNT_NAMES', 'true')
+		monkeypatch.delenv('SHOW_SENSITIVE_INFO', raising=False)
+
+		handler = PrivacyHandler(
+			show_sensitive_info=PrivacyHandler.should_show_sensitive_info(),
+			show_account_names=PrivacyHandler.should_show_account_names(),
+		)
+
+		assert handler.get_safe_account_name({'name': '真实账号名'}, 0) == '真实账号名'
+		assert handler.get_safe_balance_display(25.0, 5.0) == ':money: 余额正常'

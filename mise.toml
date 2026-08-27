@@ -19,6 +19,9 @@ playwright-version = "mise exec -- python -c 'import importlib.metadata; print(i
 # 运行签到脚本（使用 pyproject.toml 中定义的入口点）
 checkin = "mise exec -- autocheck-anyrouter"
 
+# 仅刷新登录凭据，不执行签到；可在命令末尾追加脚本参数
+refresh-credentials = "mise exec -- python scripts/refresh_anyrouter_credentials.py"
+
 # 开发环境一键配置
 setup = { depends = ["install-dev", "install-browsers"] }
 

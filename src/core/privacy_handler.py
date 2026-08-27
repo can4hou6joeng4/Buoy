@@ -8,10 +8,11 @@ class PrivacyHandler:
 
 	# 环境变量名
 	ENV_SHOW_SENSITIVE_INFO = 'SHOW_SENSITIVE_INFO'
+	ENV_SHOW_ACCOUNT_NAMES = 'SHOW_ACCOUNT_NAMES'
 	ENV_ACTIONS_RUNNER_DEBUG = 'ACTIONS_RUNNER_DEBUG'
 	ENV_REPO_VISIBILITY = 'REPO_VISIBILITY'
 
-	def __init__(self, show_sensitive_info: bool):
+	def __init__(self, show_sensitive_info: bool, show_account_names: bool | None = None):
 		"""
 		初始化隐私保护处理器
 
@@ -19,6 +20,15 @@ class PrivacyHandler:
 			show_sensitive_info: 是否显示敏感信息
 		"""
 		self.show_sensitive_info = show_sensitive_info
+		self.show_account_names = show_sensitive_info if show_account_names is None else show_account_names
+
+	@staticmethod
+	def should_show_account_names() -> bool:
+		"""判断是否单独显示完整账号名称；不影响余额等其他敏感信息。"""
+		manual_config = os.getenv(PrivacyHandler.ENV_SHOW_ACCOUNT_NAMES)
+		if manual_config is not None and manual_config.strip():
+			return manual_config.strip().lower() == 'true'
+		return PrivacyHandler.should_show_sensitive_info()
 
 	@staticmethod
 	def should_show_sensitive_info() -> bool:
@@ -91,7 +101,7 @@ class PrivacyHandler:
 		)
 
 		# 如果不需要脱敏，直接返回完整名称
-		if self.show_sensitive_info:
+		if self.show_account_names:
 			return full_name
 
 		# 如果是默认名称（"账号 N"），不需要脱敏

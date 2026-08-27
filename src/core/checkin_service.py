@@ -34,6 +34,7 @@ class CheckinService:
 			ACCOUNTS_KEY = 'ANYROUTER_ACCOUNTS'
 			ACCOUNT_PREFIX = 'ANYROUTER_ACCOUNT_'
 			SHOW_SENSITIVE_INFO = 'SHOW_SENSITIVE_INFO'
+			SHOW_ACCOUNT_NAMES = 'SHOW_ACCOUNT_NAMES'
 			REPO_VISIBILITY = 'REPO_VISIBILITY'
 			ACTIONS_RUNNER_DEBUG = 'ACTIONS_RUNNER_DEBUG'
 			GITHUB_STEP_SUMMARY = 'GITHUB_STEP_SUMMARY'
@@ -140,6 +141,16 @@ class CheckinService:
 
 	def __init__(self):
 		self.refreshed_credentials_count = 0
+		self.updated_accounts_count = 0
+		self._updated_account_ids: set[int] = set()
+
+	def _mark_account_updated(self, account_info: dict[str, Any]) -> None:
+		"""同一账号在一次运行内可能同时更新凭据和名称，只计数一次。"""
+		account_identity = id(account_info)
+		if account_identity in self._updated_account_ids:
+			return
+		self._updated_account_ids.add(account_identity)
+		self.updated_accounts_count += 1
 
 	async def check_infrastructure(
 		self,
@@ -267,7 +278,10 @@ class CheckinService:
 		    tuple[bool, dict[str, Any] | None, UpstreamFault | None]:
 		        (是否签到成功, 用户信息, 上游服务故障；无上游故障时为 None)
 		"""
-		privacy_handler = PrivacyHandler(PrivacyHandler.should_show_sensitive_info())
+		privacy_handler = PrivacyHandler(
+			PrivacyHandler.should_show_sensitive_info(),
+			PrivacyHandler.should_show_account_names(),
+		)
 		account_name = privacy_handler.get_safe_account_name(account_info, account_index)
 		logger.processing(f'开始处理 {account_name}')
 
@@ -334,6 +348,11 @@ class CheckinService:
 					)
 
 				if user_info and user_info.get('success'):
+					resolved_name = user_info.get('account_name')
+					if resolved_name and account_info.get('name') != resolved_name:
+						account_info['name'] = resolved_name
+						self._mark_account_updated(account_info)
+					account_name = privacy_handler.get_safe_account_name(account_info, account_index)
 					logger.info(user_info['display'], account_name)
 				elif user_info:
 					logger.warning(user_info.get('error', '未知错误'), account_name)
@@ -491,6 +510,7 @@ class CheckinService:
 		account_info['api_user'] = api_user
 		account_info['cookies'] = {'session': session}
 		self.refreshed_credentials_count += 1
+		self._mark_account_updated(account_info)
 		logger.success('账号凭据已自动刷新')
 		return None
 
@@ -717,10 +737,12 @@ class CheckinService:
 			user_data = data.get('data', {})
 			quota = round(user_data.get('quota', 0) / 500000, 2)
 			used_quota = round(user_data.get('used_quota', 0) / 500000, 2)
+			account_name = self._extract_account_name(user_data)
 			return {
 				'success': True,
 				'quota': quota,
 				'used_quota': used_quota,
+				'account_name': account_name,
 				'display': privacy_handler.get_safe_balance_display(quota=quota, used=used_quota),
 			}
 
@@ -750,6 +772,15 @@ class CheckinService:
 		if any(marker in lowered for marker in self.Config.Authentication.ERROR_MARKERS):
 			return 'authentication_failed'
 		return 'api_error'
+
+	@staticmethod
+	def _extract_account_name(user_data: dict[str, Any]) -> str | None:
+		"""仅从白名单字段提取名称，避免透传 `/api/user/self` 的敏感内容。"""
+		for key in ('display_name', 'username'):
+			value = user_data.get(key)
+			if isinstance(value, str) and value.strip():
+				return value.strip()
+		return None
 
 	@staticmethod
 	def _parse_cookies(cookies_data) -> dict[str, str]:
