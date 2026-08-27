@@ -8,7 +8,7 @@ branding:
 
 inputs:
   accounts:
-    description: 'AnyRouter 账号信息'
+    description: 'AnyRouter 账号信息；可选携带 username/password 以在当前运行中自动刷新失效凭据'
     required: true
   show-sensitive-info:
     description: '是否显示敏感信息'

@@ -4,6 +4,13 @@ on:
     - cron: '0 */6 * * *'
   workflow_dispatch:
 
+permissions:
+  contents: read
+
+concurrency:
+  group: anyrouter-checkin-production
+  cancel-in-progress: false
+
 jobs:
   checkin:
     runs-on: ubuntu-latest
@@ -34,30 +41,6 @@ jobs:
       - name: 📥 检出代码
         uses: actions/checkout@v6
 
-      - name: 🔑 加载账号配置
-        env:
-          ALL_SECRETS_JSON: ${{ toJSON(secrets) }}
-        run: |
-          python3 - <<'PY'
-          import json
-          import os
-
-          secrets = json.loads(os.environ['ALL_SECRETS_JSON'])
-          exported = 0
-          heredoc = '__ANYROUTER_ENV__'
-
-          with open(os.environ['GITHUB_ENV'], 'a', encoding='utf-8') as env_file:
-              for key, value in secrets.items():
-                  if not key.startswith('ANYROUTER_ACCOUNT_') or not value:
-                      continue
-
-                  print(f'::add-mask::{value}')
-                  env_file.write(f'{key}<<{heredoc}\n{value}\n{heredoc}\n')
-                  exported += 1
-
-          print(f'已导出 {exported} 个 ANYROUTER_ACCOUNT_* 账号配置')
-          PY
-
       - name: 🔧 安装 Mise
         uses: jdx/mise-action@v4
         with:
@@ -79,4 +62,46 @@ jobs:
             balance-hash-
 
       - name: 🚀 执行签到任务
+        id: checkin
+        continue-on-error: true
+        env:
+          # 仅在账号凭据实际刷新时生成，供后续步骤安全写回 Environment Secret
+          ANYROUTER_REFRESHED_ACCOUNTS_FILE: ${{ runner.temp }}/anyrouter-refreshed-accounts.json
         run: mise run checkin
+
+      - name: 🔄 持久化自动刷新的账号凭据
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.BUOY_SECRET_SYNC_TOKEN }}
+          REFRESHED_ACCOUNTS_FILE: ${{ runner.temp }}/anyrouter-refreshed-accounts.json
+        run: |
+          if [[ ! -s "$REFRESHED_ACCOUNTS_FILE" ]]; then
+            echo "本次没有刷新账号凭据，无需更新 GitHub Environment Secret"
+            exit 0
+          fi
+
+          refreshed_accounts=$(<"$REFRESHED_ACCOUNTS_FILE")
+          echo "::add-mask::$refreshed_accounts"
+
+          if [[ -z "$GH_TOKEN" ]]; then
+            : > "$REFRESHED_ACCOUNTS_FILE"
+            echo "::error::账号已在本次运行中恢复，但缺少 BUOY_SECRET_SYNC_TOKEN，无法更新 production 环境的 ANYROUTER_ACCOUNTS"
+            exit 1
+          fi
+
+          if ! printf '%s' "$refreshed_accounts" | gh secret set ANYROUTER_ACCOUNTS \
+            --env production \
+            --repo "$GITHUB_REPOSITORY"; then
+            : > "$REFRESHED_ACCOUNTS_FILE"
+            echo "::error::账号已在本次运行中恢复，但 GitHub Environment Secret 写回失败"
+            exit 1
+          fi
+
+          : > "$REFRESHED_ACCOUNTS_FILE"
+          echo "已更新 production 环境的 ANYROUTER_ACCOUNTS，后续定时签到将使用新凭据"
+
+      - name: ❌ 传播签到失败状态
+        if: always() && steps.checkin.outcome == 'failure'
+        run: |
+          echo "::error::AnyRouter 签到任务失败"
+          exit 1

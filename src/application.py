@@ -39,6 +39,7 @@ class Application:
 		self.notify_trigger_manager = NotifyTriggerManager()
 		self.notification_kit = NotificationKit()
 		self.github_reporter = GitHubReporter(self.privacy_handler)
+		self.has_prefix_account_configs = False
 
 	def _build_timestamp(self) -> tuple[str, str]:
 		"""
@@ -61,6 +62,46 @@ class Application:
 
 		now = datetime.now(timezone)
 		return now.strftime(timestamp_format), now.strftime('%Z')
+
+	def _export_refreshed_accounts(self, accounts: list[dict[str, Any]]) -> bool:
+		"""仅在凭据发生刷新时，把下一次运行所需配置写入受限临时文件。"""
+		if self.checkin_service.refreshed_credentials_count == 0:
+			return True
+
+		target_value = os.getenv(CheckinService.Config.Env.REFRESHED_ACCOUNTS_FILE)
+		if not target_value:
+			logger.warning('账号凭据已刷新，但未配置持久化输出文件；仅本次运行生效', tag='凭据')
+			return True
+		if self.has_prefix_account_configs:
+			logger.error(
+				'检测到 ANYROUTER_ACCOUNT_* 配置；为避免旧覆盖值破坏新凭据，已阻止自动写回',
+				tag='凭据',
+			)
+			return False
+
+		target = Path(target_value)
+		if not target.parent.is_dir():
+			logger.error('刷新凭据导出目录不存在，无法持久化到 GitHub Actions', tag='凭据')
+			return False
+
+		payload = json.dumps(accounts, ensure_ascii=False, separators=(',', ':'))
+		flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC | getattr(os, 'O_NOFOLLOW', 0)
+
+		try:
+			fd = os.open(target, flags, 0o600)
+			with os.fdopen(fd, 'w', encoding='utf-8') as output_file:
+				output_file.write(payload)
+				output_file.write('\n')
+			os.chmod(target, 0o600)
+		except OSError:
+			logger.error('刷新凭据写入临时文件失败，无法持久化到 GitHub Actions', tag='凭据', exc_info=True)
+			return False
+
+		logger.info(
+			f'已准备 {self.checkin_service.refreshed_credentials_count} 个刷新账号的安全写回文件',
+			tag='凭据',
+		)
+		return True
 
 	async def run(self):
 		"""执行签到流程"""
@@ -130,9 +171,9 @@ class Application:
 		upstream_fault: CheckinService.UpstreamFault | None = None  # 首个上游服务故障详情
 
 		for i, account in enumerate(accounts):
-			api_user = account.get('api_user', '')
 			try:
 				success, user_info, account_upstream_fault = await self.checkin_service.check_in_account(account, i)
+				api_user = account.get('api_user', '')
 				# 日志使用脱敏名称，通知使用完整名称
 				safe_account_name = self.privacy_handler.get_safe_account_name(account, i)
 				full_account_name = self.privacy_handler.get_full_account_name(account, i)
@@ -271,6 +312,8 @@ class Application:
 				)
 				account_results.append(account_result)
 
+		credentials_export_succeeded = self._export_refreshed_accounts(accounts)
+
 		# 成功提醒只在所有账号都完成额度变化时触发，失败提醒仍可单独触发
 		all_balance_changed = (
 			total_count > 0
@@ -398,6 +441,9 @@ class Application:
 		)
 
 		# 设置退出码：上游服务故障不是账号问题，不应让工作流变红
+		if not credentials_export_succeeded:
+			sys.exit(1)
+
 		has_real_failure = (total_count - success_count - upstream_fault_count) > 0
 		sys.exit(0 if success_count > 0 or not has_real_failure else 1)
 
@@ -458,6 +504,7 @@ class Application:
 		# 1. 读取两个来源的配置
 		accounts_from_array = self._load_accounts_from_array()
 		prefix_configs = self._load_accounts_from_prefix()
+		self.has_prefix_account_configs = bool(prefix_configs)
 
 		# 2. 覆盖阶段：用 ANYROUTER_ACCOUNT_{name} 覆盖 ANYROUTER_ACCOUNTS 中的配置
 		accounts = self._apply_prefix_overrides(accounts_from_array, prefix_configs)
@@ -543,10 +590,12 @@ class Application:
 				logger.error(f'账号 {i + 1} 配置格式不正确，已忽略')
 				continue
 
-			# 缺少必需字段
-			if 'cookies' not in account or 'api_user' not in account:
+			# 允许已有 session/api_user，或可用于自动刷新的 username/password。
+			has_session_credentials = bool(account.get('cookies') and account.get('api_user'))
+			has_login_credentials = bool(account.get('username') and account.get('password'))
+			if not has_session_credentials and not has_login_credentials:
 				account_name = account.get('name', f'账号 {i + 1}')
-				logger.error(f'"{account_name}" 缺少必需字段 (cookies, api_user)，已忽略')
+				logger.error(f'"{account_name}" 需要 cookies/api_user 或 username/password，已忽略')
 				continue
 
 			# name 字段为空字符串
@@ -662,12 +711,13 @@ class Application:
 		name = account.get('name', '')
 		cookies = account.get('cookies', '')
 		api_user = account.get('api_user', '')
+		username = account.get('username', '')
 
 		# cookies 可能是字典，需要序列化为字符串
 		if isinstance(cookies, dict):
 			cookies = json.dumps(cookies, sort_keys=True)
 
-		return f'{name}|{cookies}|{api_user}'
+		return f'{name}|{cookies}|{api_user}|{username}'
 
 	def _print_account_config_guide(self):
 		"""打印账号配置指南"""
@@ -686,8 +736,8 @@ class Application:
 			'[',
 			'  {',
 			'    "name": "账号1",',
-			'    "cookies": "cookie1=value1; cookie2=value2",',
-			'    "api_user": "your_api_user"',
+			'    "username": "your_username",',
+			'    "password": "your_password"',
 			'  }',
 			']',
 			'',
@@ -702,6 +752,6 @@ class Application:
 			'💡 提示：',
 			'- 两种方式可以同时使用，账号会自动合并',
 			'- name 字段为账号显示名称（可选）',
-			'- cookies 为登录后的 cookie 字符串',
-			'- api_user 为 API 用户标识',
+			'- 可配置 cookies/api_user 直接签到',
+			'- 或配置 username/password，在凭据缺失或失效时自动刷新',
 		])  # fmt: skip

@@ -103,8 +103,50 @@ jobs:
 ### 账号配置
 
 - `name`（可选）：账号显示名称
-- `cookies`：登录后的 session cookie
-- `api_user`：API 用户标识
+- `cookies`：登录后的 session cookie；配置 `username/password` 时可省略，由工作流首次运行自动获取
+- `api_user`：API 用户标识；配置 `username/password` 时可省略，由工作流首次运行自动获取
+- `username` / `password`（可选，成对配置）：仅在 `session` 缺失或明确失效时用于自动刷新凭据
+
+#### 凭据自动刷新（Fork 定时工作流）
+
+内置的 Fork 工作流仍负责每 6 小时执行签到。启用自动刷新后，正常情况下继续直接使用已有
+`session/api_user`；只有 `/api/user/self` 明确返回认证失败，或这两个字段尚未生成时，才会使用
+`username/password` 重新登录。刷新成功后，本次运行立即继续签到，并把新的账号配置写回
+`production` 环境中的 `ANYROUTER_ACCOUNTS` Secret，供后续定时运行使用。
+
+在仓库的 `Settings` > `Environments` > `production` > `Environment secrets` 中配置：
+
+1. `ANYROUTER_ACCOUNTS`：账号数组。首次启用时可以只提供登录凭据；第一次成功运行后会自动补全
+   `cookies.session` 和 `api_user`。
+2. `BUOY_SECRET_SYNC_TOKEN`：只授予当前仓库访问权、并把仓库 `Environments` 权限设为
+   `Read and write` 的 fine-grained PAT。工作流默认的 `GITHUB_TOKEN` 不能管理 Environment Secrets。
+
+```json5
+[
+  {
+    "name": "账号1",
+    "username": "登录用户名或邮箱",
+    "password": "登录密码"
+  },
+  {
+    "name": "账号2",
+    "username": "登录用户名或邮箱",
+    "password": "登录密码",
+    "cookies": {
+      "session": "现有 session，可选"
+    },
+    "api_user": "现有用户 ID，可选"
+  }
+]
+```
+
+> 安全说明：自动恢复不可能在没有长期认证材料的情况下完成，因此 GitHub Environment Secret 中会保存
+> AnyRouter 登录密码。同步令牌不得使用经典 PAT 的宽泛权限；应限制到当前仓库和 Environment secrets 写入。
+> 刷新结果只会写入权限为 `0600` 的 Runner 临时文件，日志和 Step Summary 不会输出密码、session 或完整账号 JSON。
+
+> 兼容性说明：仓库内置的 Fork 工作流只加载 `ANYROUTER_ACCOUNTS`，并以它作为自动写回的唯一持久化目标；
+> 已经存储在 Environment 中的 `ANYROUTER_ACCOUNT_*` Secret 不会被该工作流读取。复合 Action 和本地运行仍支持
+> 下文的 `ANYROUTER_ACCOUNT_*` 前缀配置，但启用自动写回时不要同时向进程注入这类覆盖值。
 
 支持两种配置方式，可以同时使用（账号会自动合并并去重）：
 

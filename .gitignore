@@ -7,3 +7,6 @@ __pycache__
 
 # 测试环境配置
 .env.test
+
+# 本地账号凭据（明文，切勿提交）
+anyrouter-accounts.json

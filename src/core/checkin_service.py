@@ -23,6 +23,7 @@ class CheckinService:
 			BASE = 'https://anyrouter.top'
 			LOGIN = f'{BASE}/login'
 			API_BASE = f'{BASE}/api'
+			AUTH_LOGIN = f'{API_BASE}/user/login'
 			USER_INFO = f'{API_BASE}/user/self'
 			CHECKIN = f'{API_BASE}/user/sign_in'
 			CONSOLE = f'{BASE}/console'
@@ -36,6 +37,7 @@ class CheckinService:
 			REPO_VISIBILITY = 'REPO_VISIBILITY'
 			ACTIONS_RUNNER_DEBUG = 'ACTIONS_RUNNER_DEBUG'
 			GITHUB_STEP_SUMMARY = 'GITHUB_STEP_SUMMARY'
+			REFRESHED_ACCOUNTS_FILE = 'ANYROUTER_REFRESHED_ACCOUNTS_FILE'
 			CI = 'CI'
 			GITHUB_ACTIONS = 'GITHUB_ACTIONS'
 
@@ -99,6 +101,23 @@ class CheckinService:
 				'gateway timeout',
 			)
 
+		class Authentication:
+			"""用于识别 session 失效的服务端错误文案。"""
+
+			ERROR_MARKERS = (
+				'unauthorized',
+				'authentication failed',
+				'invalid user',
+				'user not found',
+				'not logged in',
+				'未登录',
+				'请先登录',
+				'登录已过期',
+				'登录状态无效',
+				'用户不存在',
+				'无效的用户',
+			)
+
 	@dataclass(frozen=True)
 	class UpstreamFault:
 		"""上游服务故障（AnyRouter 服务端问题，不应记为账号失败）"""
@@ -118,6 +137,9 @@ class CheckinService:
 		message: str
 		attempts: int
 		url: str = 'https://anyrouter.top/login'
+
+	def __init__(self):
+		self.refreshed_credentials_count = 0
 
 	async def check_infrastructure(
 		self,
@@ -249,54 +271,68 @@ class CheckinService:
 		account_name = privacy_handler.get_safe_account_name(account_info, account_index)
 		logger.processing(f'开始处理 {account_name}')
 
-		# 解析账号配置
-		cookies_data = account_info.get('cookies', {})
-		api_user = account_info.get('api_user', '')
+		api_user = str(account_info.get('api_user', ''))
+		user_cookies = self._parse_cookies(account_info.get('cookies', {}))
+		has_login_credentials = bool(account_info.get('username') and account_info.get('password'))
 
-		# 未找到 API 用户标识符
-		if not api_user:
-			logger.error('未找到 API 用户标识符', account_name)
-			return False, None, None
-
-		# 解析用户 cookies
-		user_cookies = self._parse_cookies(cookies_data)
-		if not user_cookies:
-			logger.error('配置格式无效', account_name)
+		if (not api_user or not user_cookies) and not has_login_credentials:
+			logger.error('缺少有效的 session/api_user，且未配置 username/password', account_name=account_name)
 			return False, None, None
 
 		# 步骤1：获取 WAF cookies
 		waf_cookies = await self._get_waf_cookies_with_playwright(account_name)
 		if not waf_cookies:
-			logger.error('无法获取 WAF cookies', account_name)
+			logger.error('无法获取 WAF cookies', account_name=account_name)
 			return False, None, None
 
 		# 步骤2：使用 httpx 进行 API 请求
 		async with httpx.AsyncClient(http2=True, timeout=30.0) as client:
 			try:
-				# 合并 WAF cookies 和用户 cookies
+				# 合并 WAF cookies 和仍可能有效的用户 cookies
 				all_cookies = {**waf_cookies, **user_cookies}
 				client.cookies.update(all_cookies)
 
-				headers = {
-					'User-Agent': ' '.join(self.Config.Browser.USER_AGENT_PARTS),
-					'Referer': self.Config.URLs.CONSOLE,
-					'Origin': self.Config.URLs.BASE,
-					'new-api-user': api_user,
-					'Accept': 'application/json, text/plain, */*',
-					'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
-					'Accept-Encoding': 'gzip, deflate, br, zstd',
-					'Connection': 'keep-alive',
-					'Sec-Fetch-Dest': 'empty',
-					'Sec-Fetch-Mode': 'cors',
-					'Sec-Fetch-Site': 'same-origin',
-				}
+				headers = self._build_api_headers(api_user)
+				user_info = None
+				needs_refresh = not api_user or not user_cookies
 
-				# 获取用户信息
-				user_info = await self._get_user_info(
-					client=client,
-					headers=headers,
-					privacy_handler=privacy_handler,
-				)
+				if not needs_refresh:
+					user_info = await self._get_user_info(
+						client=client,
+						headers=headers,
+						privacy_handler=privacy_handler,
+					)
+					needs_refresh = user_info.get('reason') == 'authentication_failed'
+
+				if needs_refresh:
+					if not has_login_credentials:
+						logger.warning(
+							user_info.get('error', '账号凭据已失效') if user_info else '账号凭据已失效',
+							account_name=account_name,
+						)
+						return False, user_info, None
+
+					logger.warning('检测到账号凭据缺失或已失效，尝试自动刷新', account_name=account_name)
+					refresh_error = await self._refresh_account_credentials(
+						client=client,
+						account_info=account_info,
+					)
+					if refresh_error:
+						logger.error(refresh_error, account_name=account_name)
+						return (
+							False,
+							{'success': False, 'error': refresh_error, 'reason': 'credential_refresh_failed'},
+							None,
+						)
+
+					api_user = str(account_info['api_user'])
+					headers = self._build_api_headers(api_user)
+					user_info = await self._get_user_info(
+						client=client,
+						headers=headers,
+						privacy_handler=privacy_handler,
+					)
+
 				if user_info and user_info.get('success'):
 					logger.info(user_info['display'], account_name)
 				elif user_info:
@@ -378,6 +414,85 @@ class CheckinService:
 					exc_info=True,
 				)
 				return False, None, None
+
+	def _build_api_headers(self, api_user: str = '') -> dict[str, str]:
+		"""构造 AnyRouter 同源 API 请求头。"""
+		headers = {
+			'User-Agent': ' '.join(self.Config.Browser.USER_AGENT_PARTS),
+			'Referer': self.Config.URLs.CONSOLE,
+			'Origin': self.Config.URLs.BASE,
+			'Accept': 'application/json, text/plain, */*',
+			'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
+			'Accept-Encoding': 'gzip, deflate, br, zstd',
+			'Connection': 'keep-alive',
+			'Sec-Fetch-Dest': 'empty',
+			'Sec-Fetch-Mode': 'cors',
+			'Sec-Fetch-Site': 'same-origin',
+		}
+		if api_user:
+			headers['new-api-user'] = api_user
+		return headers
+
+	async def _refresh_account_credentials(
+		self,
+		client: httpx.AsyncClient,
+		account_info: dict[str, Any],
+	) -> str | None:
+		"""使用长期登录凭据刷新 session 和 API 用户标识；成功时原地更新账号。"""
+		username = account_info.get('username')
+		password = account_info.get('password')
+		if not username or not password:
+			return '未配置 username/password，无法自动刷新账号凭据'
+
+		login_headers = self._build_api_headers()
+		login_headers.update({
+			'Referer': self.Config.URLs.LOGIN,
+			'Content-Type': 'application/json',
+		})
+		for cookie in list(client.cookies.jar):
+			if cookie.name == 'session':
+				client.cookies.jar.clear(cookie.domain, cookie.path, cookie.name)
+
+		try:
+			response = await client.post(
+				url=self.Config.URLs.AUTH_LOGIN,
+				params={'turnstile': ''},
+				headers=login_headers,
+				json={'username': username, 'password': password},
+				timeout=30,
+			)
+		except httpx.TimeoutException:
+			return '自动刷新账号凭据失败：登录请求超时'
+		except httpx.RequestError:
+			return '自动刷新账号凭据失败：登录网络错误'
+
+		if response.status_code != 200:
+			return f'自动刷新账号凭据失败：登录接口返回 HTTP {response.status_code}'
+
+		try:
+			result = response.json()
+		except json.JSONDecodeError:
+			return '自动刷新账号凭据失败：登录接口未返回有效 JSON，可能被 WAF 拒绝'
+
+		if not result.get('success'):
+			message = str(result.get('message', '账号或密码错误'))
+			return f'自动刷新账号凭据失败：{message}'
+
+		user_data = result.get('data')
+		api_user = str(user_data.get('id', '')) if isinstance(user_data, dict) else ''
+		try:
+			session = client.cookies.get('session')
+		except httpx.CookieConflict:
+			session = next((cookie.value for cookie in client.cookies.jar if cookie.name == 'session'), None)
+
+		if not api_user or not session:
+			return '自动刷新账号凭据失败：登录响应缺少 session 或用户 ID'
+
+		account_info['api_user'] = api_user
+		account_info['cookies'] = {'session': session}
+		self.refreshed_credentials_count += 1
+		logger.success('账号凭据已自动刷新')
+		return None
 
 	async def _post_checkin_with_retry(
 		self,
@@ -564,11 +679,19 @@ class CheckinService:
 				timeout=30,
 			)
 
-			# HTTP 请求失败
+			# 认证失败需要向上层暴露稳定原因，才能只在 session 失效时刷新。
+			if response.status_code in (401, 403):
+				return {
+					'success': False,
+					'error': f'获取用户信息失败：HTTP {response.status_code}',
+					'reason': 'authentication_failed',
+				}
+
 			if response.status_code != 200:
 				return {
 					'success': False,
 					'error': f'获取用户信息失败：HTTP {response.status_code}',
+					'reason': 'http_error',
 				}
 
 			# JSON 解析失败
@@ -578,13 +701,16 @@ class CheckinService:
 				return {
 					'success': False,
 					'error': '获取用户信息失败：无效的 JSON 响应',
+					'reason': 'invalid_response',
 				}
 
 			# API 响应失败
 			if not data.get('success'):
+				message = str(data.get('message', '获取用户信息失败：API 错误'))
 				return {
 					'success': False,
-					'error': data.get('message', '获取用户信息失败：API 错误'),
+					'error': message,
+					'reason': self._classify_user_info_failure(message),
 				}
 
 			# 成功获取用户信息
@@ -602,19 +728,28 @@ class CheckinService:
 			return {
 				'success': False,
 				'error': '获取用户信息失败：请求超时',
+				'reason': 'timeout',
 			}
 
 		except httpx.RequestError:
 			return {
 				'success': False,
 				'error': '获取用户信息失败：网络错误',
+				'reason': 'network_error',
 			}
 
 		except Exception as e:
 			return {
 				'success': False,
 				'error': f'获取用户信息失败：{str(e)[:50]}...',
+				'reason': 'unexpected_error',
 			}
+
+	def _classify_user_info_failure(self, message: str) -> str:
+		lowered = message.lower()
+		if any(marker in lowered for marker in self.Config.Authentication.ERROR_MARKERS):
+			return 'authentication_failed'
+		return 'api_error'
 
 	@staticmethod
 	def _parse_cookies(cookies_data) -> dict[str, str]:
