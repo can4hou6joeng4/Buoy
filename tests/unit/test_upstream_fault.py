@@ -187,9 +187,9 @@ class TestUpstreamFaultReporting:
 		rendered_title, rendered_content = kit._render_template(kit.telegram_config.template, context)
 
 		assert rendered_title == '🚧 AnyRouter 上游异常'
-		assert '<b>✅ 签到结果：</b>0/2' in rendered_content
 		assert f'<b>🚧 上游故障：</b>{MYSQL_LOCK_ERROR}' in rendered_content
 		assert '<b>📡 影响范围：</b>2/2' in rendered_content
+		assert '<b>📊 签到统计：</b>✅ 0/2｜❌ 0/2｜🚧 2/2' in rendered_content
 		assert '账号 A' not in rendered_content
 		assert '账号 B' not in rendered_content
 		assert '<b>❌' not in rendered_content, '上游故障不应出现在失败账号区块'

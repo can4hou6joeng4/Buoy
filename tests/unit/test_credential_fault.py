@@ -125,10 +125,10 @@ class TestCredentialFaultReporting:
 		rendered_title, rendered_content = kit._render_template(kit.telegram_config.template, context)
 
 		assert rendered_title == '🔑 AnyRouter 凭据异常'
-		assert '<b>✅ 签到结果：</b>1/3' in rendered_content
+		assert '<b>💰 账号 C</b>｜额度 $25.0｜已用 $5.0' in rendered_content
 		assert '<b>🔑 凭据失效：</b>2 个（账号 A、账号 B）' in rendered_content
 		assert rendered_content.count('🛠️ 处理建议：') == 1
-		assert '账号 C' not in rendered_content
+		assert '<b>📊 签到统计：</b>✅ 1/3｜❌ 2/3' in rendered_content
 		assert 'HTTP 401' not in rendered_content
 		assert 'HTTP 403' not in rendered_content
 
