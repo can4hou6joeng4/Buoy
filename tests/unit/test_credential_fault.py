@@ -104,6 +104,34 @@ class TestCredentialErrorMessage:
 class TestCredentialFaultReporting:
 	"""凭据失效在通知上下文与 Actions summary 中的呈现"""
 
+	def test_default_telegram_template_groups_partial_credential_expiry(
+		self,
+		monkeypatch: pytest.MonkeyPatch,
+		clean_notification_env: None,
+	):
+		"""部分凭据失效聚合账号名，并只给出一次处置建议。"""
+		monkeypatch.setenv('TELEGRAM_NOTIF_CONFIG', '{"bot_token": "test_token", "chat_id": "123456"}')
+		kit = NotificationKit()
+		assert kit.telegram_config is not None
+		assert kit.telegram_config.template is not None
+
+		data = build_notification_data([
+			build_account_result(name='账号 A', status='credential_expired', error='账号凭据已失效（HTTP 401）'),
+			build_account_result(name='账号 B', status='credential_expired', error='账号凭据已失效（HTTP 403）'),
+			build_account_result(name='账号 C', balance_changed=False),
+		])
+		context = kit._build_context_data(data)
+
+		rendered_title, rendered_content = kit._render_template(kit.telegram_config.template, context)
+
+		assert rendered_title == '🔑 AnyRouter 凭据异常'
+		assert '<b>✅ 签到结果：</b>1/3' in rendered_content
+		assert '<b>🔑 凭据失效：</b>2 个（账号 A、账号 B）' in rendered_content
+		assert rendered_content.count('🛠️ 处理建议：') == 1
+		assert '账号 C' not in rendered_content
+		assert 'HTTP 401' not in rendered_content
+		assert 'HTTP 403' not in rendered_content
+
 	def test_credential_expired_accounts_are_grouped_but_still_counted_as_failed(
 		self,
 		clean_notification_env: None,

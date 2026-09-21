@@ -274,6 +274,7 @@ class NotificationKit:
 			acc for acc in data.accounts
 			if acc.status == 'credential_expired'
 		]  # fmt: skip
+		other_failed_accounts = [acc for acc in failed_accounts if acc.status != 'credential_expired']
 
 		# 余额变化相关分组（明确只包含成功的账号）
 		balance_changed_accounts = [
@@ -296,6 +297,33 @@ class NotificationKit:
 			acc for acc in balance_changed_accounts
 			if acc.used_delta not in (None, 0)
 		]  # fmt: skip
+
+		# Telegram 等短消息渠道需要按「一次变化事件」聚合，而不是把同一账号按
+		# 成功、总额度变化、已使用变化重复列出。所有变化账号的变化模式相同时，
+		# 直接输出一条聚合摘要；否则为每个账号生成一条合并后的变化说明。
+		balance_change_patterns = {
+			(
+				account.quota_delta_display if account.quota_delta not in (None, 0) else None,
+				account.used_delta_display if account.used_delta not in (None, 0) else None,
+			)
+			for account in balance_changed_accounts
+		}
+		all_balance_changes_uniform = len(balance_changed_accounts) > 1 and len(balance_change_patterns) == 1
+		common_quota_delta_display = None
+		common_used_delta_display = None
+		if all_balance_changes_uniform:
+			common_quota_delta_display, common_used_delta_display = next(iter(balance_change_patterns))
+
+		balance_change_lines: list[str] = []
+		if not all_balance_changes_uniform:
+			for account in balance_changed_accounts:
+				changes: list[str] = []
+				if account.quota_delta not in (None, 0):
+					changes.append(f'额度 {account.quota_delta_display} → ${account.quota}')
+				if account.used_delta not in (None, 0):
+					changes.append(f'已用 {account.used_delta_display} → ${account.used}')
+				if changes:
+					balance_change_lines.append(f'👤 {account.name}：{"；".join(changes)}')
 
 		# 计算可判断余额的成功账号数量（排除 balance_changed=None 的账号）
 		balance_determinable_count = len(balance_changed_accounts) + len(balance_unchanged_accounts)
@@ -320,8 +348,14 @@ class NotificationKit:
 			# 提供分组的账号列表（AccountResult 对象）
 			'success_accounts': success_accounts,
 			'failed_accounts': failed_accounts,
+			'other_failed_accounts': other_failed_accounts,
 			'upstream_fault_accounts': upstream_fault_accounts,
 			'credential_expired_accounts': credential_expired_accounts,
+			'credential_expired_count': len(credential_expired_accounts),
+			'credential_expired_account_names': '、'.join(acc.name for acc in credential_expired_accounts),
+			'only_credential_expired_failures': (
+				len(credential_expired_accounts) > 0 and len(credential_expired_accounts) == len(failed_accounts)
+			),
 			# 保留完整列表供需要的模板使用
 			'accounts': data.accounts,  # AccountResult 对象列表
 			# 便利变量：布尔标志（使用 stats 进行判断，确保与 NotificationData 的属性一致）
@@ -339,9 +373,15 @@ class NotificationKit:
 			# 余额变化相关的变量（只包含成功的账号）
 			'balance_changed_accounts': balance_changed_accounts,
 			'first_seen_accounts': first_seen_accounts,
+			'first_seen_account_names': '、'.join(acc.name for acc in first_seen_accounts),
 			'balance_unchanged_accounts': balance_unchanged_accounts,
 			'quota_changed_accounts': quota_changed_accounts,
 			'used_changed_accounts': used_changed_accounts,
+			'balance_changed_count': len(balance_changed_accounts),
+			'all_balance_changes_uniform': all_balance_changes_uniform,
+			'common_quota_delta_display': common_quota_delta_display,
+			'common_used_delta_display': common_used_delta_display,
+			'balance_change_details': '\n'.join(balance_change_lines),
 			'has_balance_changed': len(balance_changed_accounts) > 0,
 			'has_first_seen': len(first_seen_accounts) > 0,
 			'has_balance_unchanged': len(balance_unchanged_accounts) > 0,

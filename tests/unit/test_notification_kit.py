@@ -341,12 +341,12 @@ class TestNotificationKit:
 		assert [acc.name for acc in context['quota_changed_accounts']] == ['额度变化账号']
 		assert [acc.name for acc in context['used_changed_accounts']] == ['已用变化账号']
 
-	def test_default_telegram_template_includes_signin_and_change_sections(
+	def test_default_telegram_template_prioritizes_failure_and_merges_account_changes(
 		self,
 		monkeypatch: pytest.MonkeyPatch,
 		clean_notification_env: None,
 	) -> None:
-		"""测试默认 Telegram 模板会同时展示签到成功与额度变化摘要"""
+		"""失败优先，且同一账号的额度与已用变化只展开一次。"""
 		monkeypatch.setenv(
 			'TELEGRAM_NOTIF_CONFIG',
 			'{"bot_token": "test_token", "chat_id": "123456"}',
@@ -380,16 +380,150 @@ class TestNotificationKit:
 
 		rendered_title, rendered_content = kit._render_template(kit.telegram_config.template, context)
 
-		assert rendered_title == 'AnyRouter 签到与额度变动提醒'
-		assert '<b>✅ 本次签到成功账号</b>' in rendered_content
-		assert '<b>• 账号 A</b>' in rendered_content
-		assert '<b>• 账号 B</b>' in rendered_content
-		assert '<b>💹 总额度发生变化</b>' in rendered_content
-		assert '额度变化：+5.0' in rendered_content
-		assert '<b>📈 已使用额度发生变化</b>' in rendered_content
-		assert '已用变化：+3.0' in rendered_content
-		assert '<b>❌ 失败账号</b>' in rendered_content
-		assert '• 账号 C：登录失效' in rendered_content
+		assert rendered_title == '❌ AnyRouter 签到异常'
+		assert '<b>✅ 签到结果：</b>2/3' in rendered_content
+		assert '<b>❌ 账号 C：</b>登录失效' in rendered_content
+		assert '👤 账号 A：额度 +5.0 → $30.0；已用 +3.0 → $8.0' in rendered_content
+		assert rendered_content.count('账号 A') == 1
+		assert rendered_content.count('账号 C') == 1
+		assert '账号 B' not in rendered_content
+		assert '本次签到成功账号' not in rendered_content
+		assert '签到结果统计' not in rendered_content
+		assert '执行时间' not in rendered_content
+
+	def test_default_telegram_template_aggregates_nine_uniform_quota_changes(
+		self,
+		monkeypatch: pytest.MonkeyPatch,
+		clean_notification_env: None,
+	) -> None:
+		"""9 个账号具有相同额度变化时，整条消息压缩为 3 个非空行。"""
+		monkeypatch.setenv(
+			'TELEGRAM_NOTIF_CONFIG',
+			'{"bot_token": "test_token", "chat_id": "123456"}',
+		)
+		kit = NotificationKit()
+		assert kit.telegram_config is not None
+		assert kit.telegram_config.template is not None
+
+		accounts = [
+			build_account_result(
+				name=f'账号 {index}',
+				quota=50.0,
+				used=5.0,
+				balance_changed=True,
+				prev_quota=25.0,
+				prev_used=5.0,
+				quota_delta=25.0,
+				used_delta=0.0,
+				quota_delta_display='+25.0',
+				used_delta_display='+0.0',
+			)
+			for index in range(1, 10)
+		]
+		context = kit._build_context_data(build_notification_data(accounts))
+
+		rendered_title, rendered_content = kit._render_template(kit.telegram_config.template, context)
+		message = f'{rendered_title}\n\n{rendered_content}'
+		non_empty_lines = [line for line in message.splitlines() if line.strip()]
+
+		assert rendered_title == '💰 AnyRouter 额度更新'
+		assert non_empty_lines == [
+			'💰 AnyRouter 额度更新',
+			'<b>✅ 签到结果：</b>9/9',
+			'<b>💰 总额度：</b>9 个账号均 +25.0',
+		]
+		assert all(account.name not in rendered_content for account in accounts)
+		assert '本次签到成功账号' not in rendered_content
+		assert '签到结果统计' not in rendered_content
+		assert '执行时间' not in rendered_content
+
+	def test_default_telegram_template_aggregates_uniform_quota_and_used_changes(
+		self,
+		monkeypatch: pytest.MonkeyPatch,
+		clean_notification_env: None,
+	) -> None:
+		"""额度与已用均采用相同变化模式时，各保留一行聚合摘要。"""
+		monkeypatch.setenv(
+			'TELEGRAM_NOTIF_CONFIG',
+			'{"bot_token": "test_token", "chat_id": "123456"}',
+		)
+		kit = NotificationKit()
+		assert kit.telegram_config is not None
+		assert kit.telegram_config.template is not None
+
+		accounts = [
+			build_account_result(
+				name=f'账号 {index}',
+				quota=30.0,
+				used=8.0,
+				balance_changed=True,
+				prev_quota=25.0,
+				prev_used=5.0,
+				quota_delta=5.0,
+				used_delta=3.0,
+				quota_delta_display='+5.0',
+				used_delta_display='+3.0',
+			)
+			for index in range(1, 4)
+		]
+		context = kit._build_context_data(build_notification_data(accounts))
+
+		rendered_title, rendered_content = kit._render_template(kit.telegram_config.template, context)
+		message = f'{rendered_title}\n\n{rendered_content}'
+		non_empty_lines = [line for line in message.splitlines() if line.strip()]
+
+		assert non_empty_lines == [
+			'💰 AnyRouter 额度更新',
+			'<b>✅ 签到结果：</b>3/3',
+			'<b>💰 总额度：</b>3 个账号均 +5.0',
+			'<b>📈 已用额度：</b>3 个账号均 +3.0',
+		]
+
+	def test_default_telegram_template_lists_non_uniform_changes_once_per_account(
+		self,
+		monkeypatch: pytest.MonkeyPatch,
+		clean_notification_env: None,
+	) -> None:
+		"""变化模式不一致时按账号展开，每个账号仍只出现一次。"""
+		monkeypatch.setenv(
+			'TELEGRAM_NOTIF_CONFIG',
+			'{"bot_token": "test_token", "chat_id": "123456"}',
+		)
+		kit = NotificationKit()
+		assert kit.telegram_config is not None
+		assert kit.telegram_config.template is not None
+
+		data = build_notification_data([
+			build_account_result(
+				name='账号 A',
+				quota=30.0,
+				used=8.0,
+				balance_changed=True,
+				quota_delta=5.0,
+				used_delta=3.0,
+				quota_delta_display='+5.0',
+				used_delta_display='+3.0',
+			),
+			build_account_result(
+				name='账号 B',
+				quota=35.0,
+				used=5.0,
+				balance_changed=True,
+				quota_delta=10.0,
+				used_delta=0.0,
+				quota_delta_display='+10.0',
+				used_delta_display='+0.0',
+			),
+		])
+		context = kit._build_context_data(data)
+
+		_, rendered_content = kit._render_template(kit.telegram_config.template, context)
+
+		assert '<b>📊 额度变化明细</b>' in rendered_content
+		assert '👤 账号 A：额度 +5.0 → $30.0；已用 +3.0 → $8.0' in rendered_content
+		assert '👤 账号 B：额度 +10.0 → $35.0' in rendered_content
+		assert rendered_content.count('账号 A') == 1
+		assert rendered_content.count('账号 B') == 1
 
 	def test_default_telegram_template_includes_first_seen_section(
 		self,
@@ -418,8 +552,11 @@ class TestNotificationKit:
 
 		rendered_title, rendered_content = kit._render_template(kit.telegram_config.template, context)
 
-		assert rendered_title == 'AnyRouter 新增账号签到提醒'
+		assert rendered_title == '🆕 AnyRouter 新账号接入'
 		assert context['has_first_seen'] is True
 		assert context['first_seen_accounts'][0].name == '账号 D'
-		assert '<b>🆕 新增账号已建立额度基线</b>' in rendered_content
-		assert '<b>• 账号 D</b>' in rendered_content
+		assert '<b>✅ 签到结果：</b>1/1' in rendered_content
+		assert '<b>🆕 新增账号：</b>账号 D' in rendered_content
+		assert '<b>📊 额度基线：</b>已建立' in rendered_content
+		assert '当前额度' not in rendered_content
+		assert '已使用' not in rendered_content

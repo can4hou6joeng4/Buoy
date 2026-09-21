@@ -362,7 +362,17 @@ Fork 本仓库内置的 workflow 默认读取仓库变量 `NOTIFY_TRIGGERS`，�
 
 以上变量在 `title` 和 `content` 模板中**均可使用**。
 
-Telegram 默认模板现已将“当前余额”和“金额变化”汇总在同一条消息中，避免余额变动时重复发送两条提醒。
+Telegram 默认模板采用事件优先的紧凑摘要和语义化 Emoji：普通成功账号不再逐个展开，只列出变化或异常账号；同一账号的额度与已用变化会合并在一行。多个账号具有完全相同的变化模式时会自动聚合，例如 9 个账号均增加相同额度时，整条消息只保留标题、签到结果和一行总额度摘要，共 3 行。
+
+紧凑模板还提供以下变量，便于自定义消息时复用相同的聚合结果：
+- `other_failed_accounts`: 排除凭据失效后的普通失败账号
+- `credential_expired_count` / `credential_expired_account_names`: 凭据失效数量和已拼接名称
+- `only_credential_expired_failures`: 本次失败是否全部属于凭据失效
+- `first_seen_account_names`: 已拼接的新增账号名称
+- `balance_changed_count`: 余额发生变化的账号数
+- `all_balance_changes_uniform`: 所有变化账号的额度与已用变化模式是否完全相同
+- `common_quota_delta_display` / `common_used_delta_display`: 聚合后的共同变化值
+- `balance_change_details`: 无法聚合时，每个账号一行的合并变化说明
 
 **重要说明**：
 

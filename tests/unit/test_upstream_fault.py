@@ -184,13 +184,15 @@ class TestUpstreamFaultReporting:
 		)
 		context = kit._build_context_data(data)
 
-		_, rendered_content = kit._render_template(kit.telegram_config.template, context)
+		rendered_title, rendered_content = kit._render_template(kit.telegram_config.template, context)
 
-		assert '<b>🚧 上游服务故障（非账号问题）</b>' in rendered_content
-		assert MYSQL_LOCK_ERROR in rendered_content
-		assert '受影响账号：账号 A 账号 B' in rendered_content
-		assert '🚧 上游故障：2/2' in rendered_content
-		assert '<b>❌ 失败账号</b>' not in rendered_content, '上游故障不应出现在失败账号区块'
+		assert rendered_title == '🚧 AnyRouter 上游异常'
+		assert '<b>✅ 签到结果：</b>0/2' in rendered_content
+		assert f'<b>🚧 上游故障：</b>{MYSQL_LOCK_ERROR}' in rendered_content
+		assert '<b>📡 影响范围：</b>2/2' in rendered_content
+		assert '账号 A' not in rendered_content
+		assert '账号 B' not in rendered_content
+		assert '<b>❌' not in rendered_content, '上游故障不应出现在失败账号区块'
 
 	def test_summary_reports_upstream_fault_instead_of_failure(self, monkeypatch: pytest.MonkeyPatch, tmp_path):
 		summary_file = tmp_path / 'summary.md'
