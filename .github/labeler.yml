@@ -1,0 +1,23 @@
+# 按改动路径给 PR 打标签（actions/labeler）。标签需事先存在于仓库。
+documentation:
+  - changed-files:
+      - any-glob-to-any-file:
+          - "docs/**"
+          - "**/*.md"
+ci:
+  - changed-files:
+      - any-glob-to-any-file:
+          - ".github/**"
+          - "action.yml"
+dependencies:
+  - changed-files:
+      - any-glob-to-any-file:
+          - "pyproject.toml"
+test:
+  - changed-files:
+      - any-glob-to-any-file:
+          - "tests/**"
+notifications:
+  - changed-files:
+      - any-glob-to-any-file:
+          - "src/notif/**"
