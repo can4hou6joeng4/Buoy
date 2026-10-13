@@ -24,7 +24,7 @@ async def test_rich_markdown_sends_native_table_with_supported_options():
 			'disable_web_page_preview': True,
 		},
 	)
-	content = '| 账号 | 目前额度 | 已用额度 |\n| :--- | ---: | ---: |\n' + r'| A | \$10.00 | \$1.00 |'
+	content = '| 👤 账号 | 💵 目前额度 | 📊 已用额度 |\n| :--- | ---: | ---: |\n' + r'| A | \$10.00 | \$1.00 |'
 	with patch('httpx.AsyncClient.post', return_value=httpx.Response(200, json={'ok': True})) as post:
 		await TelegramSender(config).send('额度_<b>汇总</b>', content)
 	post.assert_awaited_once_with(
@@ -131,10 +131,10 @@ def test_dynamic_names_cannot_break_table_or_inject_formatting(monkeypatch, clea
 	context = kit._build_context_data(build_notification_data([account]))
 	_, content = kit._render_template(kit.telegram_config.template, context)
 	assert content.splitlines() == [
-		'| 账号 | 目前额度 | 已用额度 |',
+		'| 👤 账号 | 💵 目前额度 | 📊 已用额度 |',
 		'| :--- | ---: | ---: |',
 		r'| A\|B\_\*&lt;b&gt;&amp;\$\\name C | \$10.00 | \$0.00 |',
-		r'| **合计** | **\$10.00** | **\$0.00** |',
+		r'| **🧮 合计** | **\$10.00** | **\$0.00** |',
 	]
 	assert account.name == name
 	assert context['accounts'][0].name == name

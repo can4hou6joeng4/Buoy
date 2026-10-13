@@ -12,12 +12,12 @@ def escape_rich_markdown(value: str) -> str:
 
 def build_balance_table(accounts: list[AccountResult], total_quota: str, total_used: str) -> str:
 	"""生成三列表格；美元符号转义，避免被 Rich Markdown 当作公式。"""
-	lines = ['| 账号 | 目前额度 | 已用额度 |', '| :--- | ---: | ---: |']
+	lines = ['| 👤 账号 | 💵 目前额度 | 📊 已用额度 |', '| :--- | ---: | ---: |']
 	for account in accounts:
 		quota = account.quota_display.replace('$', r'\$')
 		used = account.used_display.replace('$', r'\$')
 		lines.append(f'| {escape_rich_markdown(account.name)} | {quota} | {used} |')
 	total_quota = total_quota.replace('$', r'\$')
 	total_used = total_used.replace('$', r'\$')
-	lines.append(f'| **合计** | **{total_quota}** | **{total_used}** |')
+	lines.append(f'| **🧮 合计** | **{total_quota}** | **{total_used}** |')
 	return '\n'.join(lines)
