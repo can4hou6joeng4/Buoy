@@ -187,16 +187,16 @@ class TestUpstreamFaultReporting:
 		rendered_title, rendered_content = kit._render_template(kit.telegram_config.template, context)
 
 		assert rendered_title == '🚧 AnyRouter 上游异常'
-		assert f'<b>🚧 上游故障：</b>{MYSQL_LOCK_ERROR}' in rendered_content
-		assert '<b>📡 影响范围：</b>2/2' in rendered_content
-		assert rendered_content.split('<b>合计</b>\n')[1].splitlines()[:2] == [
-			'<b>目前额度：</b>暂不可用',
-			'<b>已用额度：</b>暂不可用',
-		]
-		assert '<b>账号 A</b>｜目前额度：暂不可用 · 已用额度：暂不可用' in rendered_content
-		assert '<b>账号 B</b>｜目前额度：暂不可用 · 已用额度：暂不可用' in rendered_content
+		assert (
+			r'**🚧 上游故障：**Error 1290 \(HY000\): The MySQL server is running with '
+			r'the LOCK\_WRITE\_GROWTH option so it cannot execute this statement'
+		) in rendered_content
+		assert '**📡 影响范围：**2/2' in rendered_content
+		assert '| **合计** | **暂不可用** | **暂不可用** |' in rendered_content
+		assert '| 账号 A | 暂不可用 | 暂不可用 |' in rendered_content
+		assert '| 账号 B | 暂不可用 | 暂不可用 |' in rendered_content
 		assert '仅汇总已获取额度的 0/2 个账号；未获取：账号 A、账号 B。' in rendered_content
-		assert '<b>❌' not in rendered_content, '上游故障不应出现在失败账号区块'
+		assert '**❌' not in rendered_content, '上游故障不应出现在失败账号区块'
 
 	def test_summary_reports_upstream_fault_instead_of_failure(self, monkeypatch: pytest.MonkeyPatch, tmp_path):
 		summary_file = tmp_path / 'summary.md'

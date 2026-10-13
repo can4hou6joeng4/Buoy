@@ -382,15 +382,12 @@ class TestNotificationKit:
 		rendered_title, rendered_content = kit._render_template(kit.telegram_config.template, context)
 
 		assert rendered_title == '❌ AnyRouter 签到异常'
-		assert rendered_content.split('<b>合计</b>\n')[1].splitlines()[:2] == [
-			'<b>目前额度：</b>$50.00',
-			'<b>已用额度：</b>$10.00',
-		]
+		assert r'| **合计** | **\$50.00** | **\$10.00** |' in rendered_content
 		assert '仅汇总已获取额度的 2/3 个账号；未获取：账号 C。' in rendered_content
-		assert '<b>❌ 账号 C：</b>登录失效' in rendered_content
-		assert '<b>账号 A</b>｜目前额度：$30.00 · 已用额度：$8.00' in rendered_content
-		assert '<b>账号 B</b>｜目前额度：$20.00 · 已用额度：$2.00' in rendered_content
-		assert '<b>账号 C</b>｜目前额度：暂不可用 · 已用额度：暂不可用' in rendered_content
+		assert '**❌ 账号 C：**登录失效' in rendered_content
+		assert r'| 账号 A | \$30.00 | \$8.00 |' in rendered_content
+		assert r'| 账号 B | \$20.00 | \$2.00 |' in rendered_content
+		assert '| 账号 C | 暂不可用 | 暂不可用 |' in rendered_content
 		assert '+5.0' not in rendered_content
 		assert '+3.0' not in rendered_content
 
@@ -432,11 +429,10 @@ class TestNotificationKit:
 
 		assert rendered_title == '💰 AnyRouter 额度汇总'
 		assert content_lines == [
-			*[f'<b>账号 {index}</b>｜目前额度：$50.00 · 已用额度：$5.00' for index in range(1, 10)],
-			'',
-			'<b>合计</b>',
-			'<b>目前额度：</b>$450.00',
-			'<b>已用额度：</b>$45.00',
+			'| 账号 | 目前额度 | 已用额度 |',
+			'| :--- | ---: | ---: |',
+			*[rf'| 账号 {index} | \$50.00 | \$5.00 |' for index in range(1, 10)],
+			r'| **合计** | **\$450.00** | **\$45.00** |',
 		]
 		assert '+25.0' not in rendered_content
 		assert '2026-09-21' not in rendered_content
@@ -475,11 +471,10 @@ class TestNotificationKit:
 		rendered_title, rendered_content = kit._render_template(kit.telegram_config.template, context)
 		assert rendered_title == '💰 AnyRouter 额度汇总'
 		assert rendered_content.splitlines() == [
-			*[f'<b>账号 {index}</b>｜目前额度：$30.00 · 已用额度：$8.00' for index in range(1, 4)],
-			'',
-			'<b>合计</b>',
-			'<b>目前额度：</b>$90.00',
-			'<b>已用额度：</b>$24.00',
+			'| 账号 | 目前额度 | 已用额度 |',
+			'| :--- | ---: | ---: |',
+			*[rf'| 账号 {index} | \$30.00 | \$8.00 |' for index in range(1, 4)],
+			r'| **合计** | **\$90.00** | **\$24.00** |',
 		]
 
 	def test_default_telegram_template_omits_non_uniform_changes(
@@ -523,12 +518,11 @@ class TestNotificationKit:
 		_, rendered_content = kit._render_template(kit.telegram_config.template, context)
 
 		assert rendered_content.splitlines() == [
-			'<b>账号 A</b>｜目前额度：$30.15 · 已用额度：$8.42',
-			'<b>账号 B</b>｜目前额度：$35.27 · 已用额度：$5.33',
-			'',
-			'<b>合计</b>',
-			'<b>目前额度：</b>$65.42',
-			'<b>已用额度：</b>$13.75',
+			'| 账号 | 目前额度 | 已用额度 |',
+			'| :--- | ---: | ---: |',
+			r'| 账号 A | \$30.15 | \$8.42 |',
+			r'| 账号 B | \$35.27 | \$5.33 |',
+			r'| **合计** | **\$65.42** | **\$13.75** |',
 		]
 
 	@pytest.mark.parametrize('quota,used', [(10.0, 1.0), (0.0, 0.0)])
@@ -565,11 +559,10 @@ class TestNotificationKit:
 		assert context['has_first_seen'] is True
 		assert context['first_seen_accounts'][0].name == '账号 D'
 		assert rendered_content.splitlines() == [
-			f'<b>账号 D</b>｜目前额度：${quota:.2f} · 已用额度：${used:.2f}',
-			'',
-			'<b>合计</b>',
-			f'<b>目前额度：</b>${quota:.2f}',
-			f'<b>已用额度：</b>${used:.2f}',
+			'| 账号 | 目前额度 | 已用额度 |',
+			'| :--- | ---: | ---: |',
+			rf'| 账号 D | \${quota:.2f} | \${used:.2f} |',
+			rf'| **合计** | **\${quota:.2f}** | **\${used:.2f}** |',
 		]
 
 	@pytest.mark.parametrize('quota,used', [(None, None), (None, 5.0), (25.0, None)])
@@ -590,13 +583,14 @@ class TestNotificationKit:
 		_, rendered_content = kit._render_template(kit.telegram_config.template, kit._build_context_data(data))
 
 		assert rendered_content.splitlines() == [
-			'<b>账号 A</b>｜目前额度：'
-			+ (f'${quota:.2f}' if quota is not None else '暂不可用')
-			+ ' · 已用额度：'
-			+ (f'${used:.2f}' if used is not None else '暂不可用'),
+			'| 账号 | 目前额度 | 已用额度 |',
+			'| :--- | ---: | ---: |',
+			'| 账号 A | '
+			+ (rf'\${quota:.2f}' if quota is not None else '暂不可用')
+			+ ' | '
+			+ (rf'\${used:.2f}' if used is not None else '暂不可用')
+			+ ' |',
+			'| **合计** | **暂不可用** | **暂不可用** |',
 			'',
-			'<b>合计</b>',
-			'<b>目前额度：</b>暂不可用',
-			'<b>已用额度：</b>暂不可用',
 			'⚠️ 仅汇总已获取额度的 0/1 个账号；未获取：账号 A。',
 		]

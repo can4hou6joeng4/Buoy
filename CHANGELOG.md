@@ -9,6 +9,7 @@
 ## [Unreleased]
 
 #### Add
+* Telegram 默认额度通知改为 Rich Markdown 原生表格：账号、目前额度、已用额度三列，金额右对齐，合计行加粗；通过 `sendRichMessage` 发送，安全转义账号名、错误及美元符号，保留缺失额度与异常提醒。历史自定义模板及显式 HTML/MarkdownV2 模式保持兼容。
 * 新增账号凭据失效的语义化识别：`/api/user/self` 返回 401/403 或响应体报「未登录」时，错误信息由裸 `HTTP 401` 改为「账号凭据已失效（HTTP 401）：需重新获取 session cookie，或为账号配置 username/password 自动刷新」，账号状态记为 `credential_expired`（仍计入失败数）。
 * 新增凭据集体失效的聚合告警：当所有账号（≥2 个）都因凭据失效而未签到时，只推送一条 `AnyRouter 账号凭据集体失效` 通知并给出处置动作，替代 N 条内容相同的逐账号失败通知；仍受 `NOTIFY_TRIGGERS` 约束。
 * 新增 `credential_expired_accounts`、`has_credential_expired`、`all_credential_expired` 模板变量，Actions Summary 同步展示「🔑 账号凭据失效」区块与失效账号清单。

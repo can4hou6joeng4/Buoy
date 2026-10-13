@@ -4,6 +4,7 @@ import re
 import httpx
 
 from notif.models import TelegramConfig
+from notif.telegram_formatting import escape_rich_markdown
 
 
 class TelegramSender:
@@ -28,51 +29,51 @@ class TelegramSender:
 		Raises:
 			Exception: 当 HTTP 响应状态码不是 2xx 时抛出异常
 		"""
-		# 构建消息文本
-		if title:
-			message = f'<b>{title}</b>\n\n{content}'
+		settings = self.config.platform_settings or {}
+		message_type = settings.get('message_type', 'HTML')
+		is_rich = message_type == 'RichMarkdown'
+
+		if is_rich:
+			message = f'**{escape_rich_markdown(title)}**\n\n{content}' if title else content
+			data = {
+				'chat_id': self.config.chat_id,
+				'rich_message': {'markdown': message, 'skip_entity_detection': True},
+			}
+			method = 'sendRichMessage'
 		else:
-			message = content
+			message = self._escape_html(content) if message_type == 'HTML' else content
+			if title:
+				if message_type == 'HTML':
+					formatted_title = f'<b>{html.escape(title)}</b>'
+				elif message_type in ('Markdown', 'MarkdownV2'):
+					escaped_title = re.sub(r'([\\_*\[\]()~`>#+=|{}.!-])', r'\\\1', title)
+					formatted_title = f'*{escaped_title}*'
+				else:
+					formatted_title = title
+				message = f'{formatted_title}\n\n{message}'
+			data = {'chat_id': self.config.chat_id, 'text': message, 'parse_mode': message_type}
+			method = 'sendMessage'
 
-		# 获取 message_type 设置，默认为 HTML
-		message_type = 'HTML'
-		if self.config.platform_settings:
-			message_type = self.config.platform_settings.get('message_type', 'HTML')
+		for param in ('disable_notification', 'protect_content'):
+			if param in settings:
+				data[param] = settings[param]
+		if is_rich:
+			if 'reply_to_message_id' in settings:
+				data['reply_parameters'] = {'message_id': settings['reply_to_message_id']}
+		else:
+			for param in ('disable_web_page_preview', 'reply_to_message_id'):
+				if param in settings:
+					data[param] = settings[param]
 
-		# 对 HTML 特殊字符进行转义，同时保留合法的 HTML 标签
-		if message_type == 'HTML':
-			message = self._escape_html(message)
-
-		# 构建请求数据
-		data = {
-			'chat_id': self.config.chat_id,
-			'text': message,
-			'parse_mode': message_type,
-		}
-
-		# 如果有其他平台特定设置，添加到请求中
-		if self.config.platform_settings:
-			# 支持的可选参数
-			optional_params = [
-				'disable_web_page_preview',
-				'disable_notification',
-				'protect_content',
-				'reply_to_message_id',
-			]
-			for param in optional_params:
-				if param in self.config.platform_settings:
-					data[param] = self.config.platform_settings[param]
-
-		# 构建 API URL
-		api_url = f'https://api.telegram.org/bot{self.config.bot_token}/sendMessage'
+		api_url = f'https://api.telegram.org/bot{self.config.bot_token}/{method}'
 
 		# 发送请求（含解析失败自动降级）
 		async with httpx.AsyncClient(timeout=30.0) as client:
 			response = await client.post(api_url, json=data)
 
-			if not response.is_success and "can't parse entities" in response.text:
+			if not is_rich and not response.is_success and "can't parse entities" in response.text:
 				# 解析模式不匹配，去掉格式标签后以纯文本重发
-				plain_text = re.sub(r'<[^>]+>', '', message)
+				plain_text = html.unescape(re.sub(r'<[^>]+>', '', message)) if message_type == 'HTML' else message
 				data['text'] = plain_text
 				data.pop('parse_mode', None)
 				response = await client.post(api_url, json=data)

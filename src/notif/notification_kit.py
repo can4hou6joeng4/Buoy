@@ -27,6 +27,7 @@ from notif.senders import (
 	TelegramSender,
 	WeComSender,
 )
+from notif.telegram_formatting import build_balance_table, escape_rich_markdown
 from tools.logger import logger
 
 
@@ -232,15 +233,15 @@ class NotificationKit:
 
 		try:
 			# 渲染模板
-			template_obj = stencil.Template(text)
+			# 只转换模板自身的换行转义，动态账号名称中的字面量 \\n 不应改变表格结构。
+			template_obj = stencil.Template(text.replace('\\n', '\n'))
 			rendered = template_obj.render(context)
 
 			# 检查渲染结果
 			if rendered is None:
 				raise ValueError('模板渲染返回了 None')
 
-			# 处理换行符：将 \n 转换为真正的换行符
-			return rendered.replace('\\n', '\n')
+			return rendered
 
 		except Exception as e:
 			# 如果提供了 field_name，输出错误日志
@@ -356,6 +357,23 @@ class NotificationKit:
 			'balance_summary_count': len(balance_summary_accounts),
 			'balance_summary_incomplete': bool(balance_unavailable_accounts),
 			'balance_unavailable_account_names': '、'.join(acc.name for acc in balance_unavailable_accounts),
+			# Rich Markdown 使用已转义的动态内容，不改变其他平台或旧模板的原始变量。
+			'telegram_balance_table': build_balance_table(
+				data.accounts,
+				f'${total_quota:.2f}' if balance_summary_accounts else '暂不可用',
+				f'${total_used:.2f}' if balance_summary_accounts else '暂不可用',
+			),
+			'telegram_balance_unavailable_account_names': '、'.join(
+				escape_rich_markdown(acc.name) for acc in balance_unavailable_accounts
+			),
+			'telegram_credential_expired_account_names': '、'.join(
+				escape_rich_markdown(acc.name) for acc in credential_expired_accounts
+			),
+			'telegram_failed_details': '\n\n'.join(
+				f'**❌ {escape_rich_markdown(acc.name)}：**{escape_rich_markdown(acc.error or "未知错误")}'
+				for acc in other_failed_accounts
+			),
+			'telegram_upstream_fault_message': escape_rich_markdown(data.upstream_fault_message or ''),
 			# 提供分组的账号列表（AccountResult 对象）
 			'success_accounts': success_accounts,
 			'failed_accounts': failed_accounts,
@@ -528,18 +546,27 @@ class NotificationKit:
 			return None
 
 		# 加载模板
+		# 历史自定义模板未声明解析模式时继续使用 HTML；显式旧模式继续走 sendMessage。
+		platform_settings = self._load_platform_settings(platform='telegram', parsed=parsed)
+		user_settings = parsed.get('platform_settings') or {}
+		if parsed.get('template') and 'message_type' not in user_settings:
+			platform_settings = {**(platform_settings or {}), 'message_type': 'HTML'}
+		if platform_settings and platform_settings.get('message_type') != 'RichMarkdown':
+			default_config = self._load_default_config('telegram') or {}
+			legacy_template = default_config.get('legacy_template')
+			# 合并旧格式默认内容与用户覆盖，不将旧模式悄悄改成 Rich Markdown。
+			legacy_parsed = self._deep_merge_dict(default={'template': legacy_template}, override=parsed)
+		else:
+			legacy_parsed = parsed
 		template = self._load_template(
 			platform='telegram',
-			parsed=parsed,
+			parsed=legacy_parsed,
 		)
 
 		return TelegramConfig(
 			bot_token=parsed['bot_token'],
 			chat_id=parsed['chat_id'],
-			platform_settings=self._load_platform_settings(
-				platform='telegram',
-				parsed=parsed,
-			),
+			platform_settings=platform_settings,
 			template=template,
 		)
 

@@ -125,14 +125,11 @@ class TestCredentialFaultReporting:
 		rendered_title, rendered_content = kit._render_template(kit.telegram_config.template, context)
 
 		assert rendered_title == '🔑 AnyRouter 凭据异常'
-		assert rendered_content.split('<b>合计</b>\n')[1].splitlines()[:2] == [
-			'<b>目前额度：</b>$25.00',
-			'<b>已用额度：</b>$5.00',
-		]
-		assert '<b>🔑 凭据失效：</b>2 个（账号 A、账号 B）' in rendered_content
+		assert r'| **合计** | **\$25.00** | **\$5.00** |' in rendered_content
+		assert '**🔑 凭据失效：**2 个（账号 A、账号 B）' in rendered_content
 		assert rendered_content.count('🛠️ 处理建议：') == 1
 		assert '仅汇总已获取额度的 1/3 个账号；未获取：账号 A、账号 B。' in rendered_content
-		assert '<b>账号 C</b>｜目前额度：$25.00 · 已用额度：$5.00' in rendered_content
+		assert r'| 账号 C | \$25.00 | \$5.00 |' in rendered_content
 		assert 'HTTP 401' not in rendered_content
 		assert 'HTTP 403' not in rendered_content
 

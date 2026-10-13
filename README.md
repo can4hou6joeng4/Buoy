@@ -386,7 +386,9 @@ Fork 本仓库内置的 workflow 默认读取仓库变量 `NOTIFY_TRIGGERS`，�
 
 以上变量在 `title` 和 `content` 模板中**均可使用**。
 
-Telegram 默认模板每个账号用一行展示名称、「目前额度」和「已用额度」，底部保留两项合计，金额统一保留两位小数，不展示单次消耗、额度变化、执行时间或签到统计。账号的缺失金额显示「暂不可用」，已经取得的单项金额仍会展示；合计仅纳入本次获取到完整额度数据的账号，缺失时注明汇总范围，全部缺失时合计显示「暂不可用」。凭据失效、签到失败及上游故障仍附必要提醒，通知时机继续由 `NOTIFY_TRIGGERS` 控制。
+Telegram 默认模板使用 [Rich Markdown](https://core.telegram.org/bots/api#rich-message-formatting-options) 原生表格，三列为「账号」「目前额度」「已用额度」，金额右对齐，最后一行加粗显示合计。金额统一保留两位小数，不展示单次消耗、额度变化、执行时间或签到统计。账号的缺失金额显示「暂不可用」，已经取得的单项金额仍会展示；合计仅纳入本次获取到完整额度数据的账号，缺失时注明汇总范围，全部缺失时合计显示「暂不可用」。凭据失效、签到失败及上游故障仍附必要提醒，通知时机继续由 `NOTIFY_TRIGGERS` 控制。
+
+默认 `platform_settings.message_type` 为 `RichMarkdown`，通过 [`sendRichMessage`](https://core.telegram.org/bots/api#sendrichmessage) 发送，需使用支持 Rich Messages 的 Telegram 客户端；普通 `sendMessage` 的 `MarkdownV2` 不支持原生表格。已有自定义模板未声明消息格式时仍使用 HTML，显式配置 HTML 或 MarkdownV2 时继续使用原发送接口和旧模板。自定义 Rich Markdown 模板需要显式指定 `RichMarkdown`，推荐复用已转义的 `{{ telegram_balance_table }}`，避免账号名中的竖线、换行、HTML 或 Markdown 符号破坏表格。默认模板已处理美元符号，避免金额被识别为公式。
 
 额度汇总变量：
 
@@ -396,6 +398,9 @@ Telegram 默认模板每个账号用一行展示名称、「目前额度」和�
 - `balance_summary_count`: 纳入合计的账号数
 - `balance_summary_incomplete`: 是否存在未取得完整额度数据的账号
 - `balance_unavailable_account_names`: 未取得完整额度数据的账号名称
+- `telegram_balance_table`: 已安全转义的 Rich Markdown 账号额度表，含表头和合计行
+- `telegram_balance_unavailable_account_names` / `telegram_credential_expired_account_names`: 已转义并拼接的异常账号名
+- `telegram_failed_details` / `telegram_upstream_fault_message`: 已转义的失败详情和上游故障消息
 
 自定义模板还可以使用以下变量：
 
