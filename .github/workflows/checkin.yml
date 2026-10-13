@@ -67,7 +67,7 @@ jobs:
         id: checkin
         continue-on-error: true
         env:
-          # 仅在账号凭据实际刷新时生成，供后续步骤安全写回 Environment Secret
+          # 凭据刷新或账号名称更新时生成，供后续步骤安全写回 Environment Secret
           ANYROUTER_REFRESHED_ACCOUNTS_FILE: ${{ runner.temp }}/anyrouter-refreshed-accounts.json
         run: mise run checkin
 
@@ -78,28 +78,44 @@ jobs:
           REFRESHED_ACCOUNTS_FILE: ${{ runner.temp }}/anyrouter-refreshed-accounts.json
         run: |
           if [[ ! -s "$REFRESHED_ACCOUNTS_FILE" ]]; then
-            echo "本次没有刷新账号凭据，无需更新 GitHub Environment Secret"
+            echo "本次没有更新账号配置，无需更新 GitHub Environment Secret"
             exit 0
           fi
 
+          # 无论写回成功、失败或后续命令异常退出，都清空临时凭据。
+          trap ': > "$REFRESHED_ACCOUNTS_FILE"' EXIT
           refreshed_accounts=$(<"$REFRESHED_ACCOUNTS_FILE")
           echo "::add-mask::$refreshed_accounts"
 
           if [[ -z "$GH_TOKEN" ]]; then
-            : > "$REFRESHED_ACCOUNTS_FILE"
-            echo "::error::账号已在本次运行中恢复，但缺少 BUOY_SECRET_SYNC_TOKEN，无法更新 production 环境的 ANYROUTER_ACCOUNTS"
+            echo "::error::账号配置已更新但未持久化：缺少 BUOY_SECRET_SYNC_TOKEN，无法更新 production 环境的 ANYROUTER_ACCOUNTS"
             exit 1
           fi
 
           if ! printf '%s' "$refreshed_accounts" | gh secret set ANYROUTER_ACCOUNTS \
             --env production \
             --repo "$GITHUB_REPOSITORY"; then
-            : > "$REFRESHED_ACCOUNTS_FILE"
-            echo "::error::账号已在本次运行中恢复，但 GitHub Environment Secret 写回失败"
+            echo "::error::账号配置已更新但未持久化：GitHub Environment Secret 写回失败，请查看上方 gh 原始错误"
+            echo "若公钥 API 返回 HTTP 403，请检查 BUOY_SECRET_SYNC_TOKEN 的 Fine-grained PAT：目标仓库是否正确、Environments 是否为 Read and write，以及有效期和审批/访问限制。普通 Secrets 权限或修改 workflow permissions 不能替代该授权；其他错误请按原始错误排查。"
+
+            # 使用本次工作流的同步 Token 做只读诊断，仅输出白名单响应头。
+            # 不输出响应体、账号数据或 Token；诊断失败不改变写回失败状态。
+            shopt -s nocasematch
+            for endpoint in "user" "repos/$GITHUB_REPOSITORY" "repos/$GITHUB_REPOSITORY/environments/production/secrets/public-key"; do
+              echo "同步 Token 权限诊断：GET $endpoint"
+              response=$(gh api --include --method GET "$endpoint" </dev/null 2>/dev/null) || :
+              while IFS= read -r header; do
+                [[ -z "$header" || "$header" == $'\r' ]] && break
+                case "$header" in
+                  http/*|x-accepted-github-permissions:*|x-oauth-scopes:*|github-authentication-token-expiration:*)
+                    printf '%s\n' "$header"
+                    ;;
+                esac
+              done <<< "$response"
+            done
             exit 1
           fi
 
-          : > "$REFRESHED_ACCOUNTS_FILE"
           echo "已更新 production 环境的 ANYROUTER_ACCOUNTS，后续定时签到将使用新凭据"
 
       - name: ❌ 传播签到失败状态

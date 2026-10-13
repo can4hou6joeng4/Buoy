@@ -156,6 +156,30 @@ jobs:
 如需在公开 Actions 日志中显示服务端真实账号名称，但继续隐藏余额，请设置 Environment Variable
 `SHOW_ACCOUNT_NAMES=true`。真实名称优先取 `/api/user/self` 的 `display_name`，其次取 `username`。
 
+#### Secret 写回失败排障
+
+Telegram 通知在 Python 签到阶段发送，随后才执行 Secret 写回；收到成功通知不代表账号配置已持久化。
+凭据或真实名称变化都可能触发写回。写回失败时工作流仍会失败，并清空 Runner 临时文件，不会忽略错误。
+
+写回失败后，工作流使用同一个同步 Token 只读检查身份、目标仓库和 Environment 公钥接口，
+仅输出 HTTP 状态、接口要求的权限和 Token 有效期等白名单响应头，不输出响应体或凭据。
+身份接口 401 时检查 Token 是否有效；仓库接口 403/404 时检查仓库选择、Resource owner 和访问限制；
+身份及仓库可访问但公钥接口 403 时，重点核对 Environments 权限和环境访问限制。
+
+若 `gh secret set` 的 Environment Secret 公钥 API 返回 HTTP 403，请检查实际存入
+`BUOY_SECRET_SYNC_TOKEN` 的 Fine-grained PAT（不是本地 `gh` 登录所用的 token）：
+
+1. 在 GitHub `Settings > Developer settings > Personal access tokens > Fine-grained tokens` 中确认
+   Resource owner 正确，Repository access 包含运行工作流的仓库（Fork 用户应选择自己的仓库）。
+2. Repository permissions 的 **Environments 必须为 Read and write**；普通 Secrets 权限不能替代它。
+3. 检查 token 有效期，以及适用的组织审批、访问限制。
+4. 更换 token 后，在仓库 `Settings > Environments > production > Environment secrets` 更新
+   `BUOY_SECRET_SYNC_TOKEN`。环境级同名 Secret 优先于仓库级 Secret，只更新仓库级值可能不会生效。
+
+代码或 workflow 的 `permissions` 不能补足 PAT 权限；非 403 错误应按 `gh` 原始错误排查，不一概归因于授权。
+修正授权后，只有运行实际进入写回分支并出现“已更新 production 环境的 ANYROUTER_ACCOUNTS”，才算验证写回成功；
+仅工作流变绿或提示无需更新不算。不要为验证而故意破坏有效凭据，也不要在日志或排障材料中粘贴 token、账号 JSON。
+
 支持两种配置方式，可以同时使用（账号会自动合并并去重）：
 
 #### 方式一：使用 `ANYROUTER_ACCOUNTS`（数组格式）
@@ -362,10 +386,11 @@ Fork 本仓库内置的 workflow 默认读取仓库变量 `NOTIFY_TRIGGERS`，�
 
 以上变量在 `title` 和 `content` 模板中**均可使用**。
 
-Telegram 默认模板仅用两行展示所有账号合计的「目前额度」和「已用额度」，金额统一保留两位小数，不再展示逐账号余额、单次消耗、额度变化、执行时间或签到统计。仅汇总本次获取到完整额度数据的账号；若有缺失，会注明汇总覆盖范围和未获取数据的账号，全部缺失时显示「暂不可用」。凭据失效、签到失败及上游故障仍附必要提醒，通知时机继续由 `NOTIFY_TRIGGERS` 控制。
+Telegram 默认模板每个账号用一行展示名称、「目前额度」和「已用额度」，底部保留两项合计，金额统一保留两位小数，不展示单次消耗、额度变化、执行时间或签到统计。账号的缺失金额显示「暂不可用」，已经取得的单项金额仍会展示；合计仅纳入本次获取到完整额度数据的账号，缺失时注明汇总范围，全部缺失时合计显示「暂不可用」。凭据失效、签到失败及上游故障仍附必要提醒，通知时机继续由 `NOTIFY_TRIGGERS` 控制。
 
 额度汇总变量：
 
+- `accounts`: 所有账号，保持配置顺序；每个账号的 `quota_display` / `used_display` 提供带美元符号、两位小数的额度，缺失时为「暂不可用」
 - `has_balance_summary`: 是否有账号取得完整额度数据（零余额也算有效数据）
 - `total_quota_display` / `total_used_display`: 目前额度 / 已用额度合计，保留两位小数
 - `balance_summary_count`: 纳入合计的账号数

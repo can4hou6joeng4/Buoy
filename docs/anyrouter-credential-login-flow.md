@@ -214,6 +214,30 @@ gh secret set ANYROUTER_ACCOUNTS \
 
 旧的 `ANYROUTER_ACCOUNT_*` Secret 可以继续保留，但内置工作流不会读取它们，避免旧 Session 覆盖刷新结果。
 
+### 写回失败与授权检查
+
+Telegram 通知在 Python 签到阶段发送，早于 Secret 写回。因此收到成功通知不代表新配置已持久化，
+真实名称变化也会触发写回。缺少同步 token 或写回失败时，工作流清空临时文件并保持失败退出。
+
+写回失败后使用本次同步 Token 对身份、仓库和 Environment 公钥接口进行只读诊断，
+只打印白名单响应头，不输出响应体。身份 401、仓库 403/404、公钥 403 分别帮助定位
+Token 有效性、仓库授权和 Environments 权限或环境访问限制；诊断自身失败不覆盖原始失败状态。
+
+若 Environment Secret 公钥 API 返回 HTTP 403，核对 `BUOY_SECRET_SYNC_TOKEN` 对应的 Fine-grained PAT：
+
+- Resource owner 正确，Repository access 包含实际运行的仓库。
+- Repository permissions → **Environments → Read and write**；普通 Secrets 权限不能替代它。
+- token 未过期，且满足适用的审批和访问限制。
+- 换 token 后更新 `production` 的 Environment secret；环境级同名 Secret 优先于仓库级，只改后者可能无效。
+
+本地 `gh secret set` 成功不能证明 Actions 中的 PAT 有权限，两者可能使用不同认证材料。
+代码或 workflow `permissions` 不能为该 PAT 增加授权；其他错误应依据 `gh` 原始错误排查。
+完整操作路径见 [README 的 Secret 写回失败排障](../README.md#secret-写回失败排障)。不要读取或打印 token 来排障。
+
+授权修正后的真实验收必须实际进入写回分支，确认 `gh secret set` 成功并出现
+“已更新 production 环境的 ANYROUTER_ACCOUNTS”；仅运行变绿或无需更新不算验证成功。
+不要故意破坏有效凭据来触发刷新；若仍为 403，停止并继续核对授权，不循环重试。
+
 ## 安全边界
 
 - 仓库是公开的，任何真实账号名称都会出现在公开 Actions 日志中；这是显式启用

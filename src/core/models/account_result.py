@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from decimal import Decimal
 
 
 @dataclass
@@ -44,3 +45,13 @@ class AccountResult:
 
 	# 错误信息，失败时才有
 	error: str | None = None
+
+	@property
+	def quota_display(self) -> str:
+		"""当前额度的展示值，缺失与零额度分别处理。"""
+		return f'${Decimal(str(self.quota)):.2f}' if self.quota is not None else '暂不可用'
+
+	@property
+	def used_display(self) -> str:
+		"""已用额度的展示值，不混入本次消耗。"""
+		return f'${Decimal(str(self.used)):.2f}' if self.used is not None else '暂不可用'
