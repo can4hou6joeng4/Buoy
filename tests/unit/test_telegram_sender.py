@@ -140,6 +140,30 @@ def test_dynamic_names_cannot_break_table_or_inject_formatting(monkeypatch, clea
 	assert context['accounts'][0].name == name
 
 
+@pytest.mark.parametrize('template', [None, {'title': '旧标题', 'content': '<b>旧内容</b>'}])
+def test_explicit_table_layout_overrides_legacy_format_and_preserves_credentials_and_options(
+	monkeypatch, clean_notification_env, template
+):
+	monkeypatch.setenv('TELEGRAM_LAYOUT', 'table')
+	monkeypatch.setenv(
+		'TELEGRAM_NOTIF_CONFIG',
+		json.dumps({
+			'bot_token': 'test_token',
+			'chat_id': '123456',
+			'platform_settings': {'message_type': 'HTML', 'disable_notification': True, 'protect_content': True},
+			'template': template,
+		}),
+	)
+	config = NotificationKit().telegram_config
+	assert config.bot_token == 'test_token'
+	assert config.chat_id == '123456'
+	assert config.platform_settings['message_type'] == 'RichMarkdown'
+	assert config.platform_settings['disable_notification'] is True
+	assert config.platform_settings['protect_content'] is True
+	assert '{{ telegram_balance_table }}' in config.template.content
+	assert '旧内容' not in config.template.content
+
+
 def test_template_newline_escape_does_not_rewrite_dynamic_text(clean_notification_env):
 	kit = NotificationKit()
 	template = NotificationTemplate(title=None, content=r'第一行\n{{ name }}')

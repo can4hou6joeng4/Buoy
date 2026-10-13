@@ -390,6 +390,8 @@ Telegram 默认模板使用 [Rich Markdown](https://core.telegram.org/bots/api#r
 
 默认 `platform_settings.message_type` 为 `RichMarkdown`，通过 [`sendRichMessage`](https://core.telegram.org/bots/api#sendrichmessage) 发送，需使用支持 Rich Messages 的 Telegram 客户端；普通 `sendMessage` 的 `MarkdownV2` 不支持原生表格。已有自定义模板未声明消息格式时仍使用 HTML，显式配置 HTML 或 MarkdownV2 时继续使用原发送接口和旧模板。自定义 Rich Markdown 模板需要显式指定 `RichMarkdown`，推荐复用已转义的 `{{ telegram_balance_table }}`，避免账号名中的竖线、换行、HTML 或 Markdown 符号破坏表格。默认模板已处理美元符号，避免金额被识别为公式。
 
+若旧的 `TELEGRAM_NOTIF_CONFIG` 已写入 HTML 格式或自定义模板，可设置环境变量 `TELEGRAM_LAYOUT=table`（GitHub Actions 中设置同名仓库/环境变量），显式选用内置表格模板，无需重填 Bot Token 或 Chat ID；静默发送、内容保护等选项仍保留。删除该变量即可恢复 Secret 中原有的模板和格式。
+
 额度汇总变量：
 
 - `accounts`: 所有账号，保持配置顺序；每个账号的 `quota_display` / `used_display` 提供带美元符号、两位小数的额度，缺失时为「暂不可用」

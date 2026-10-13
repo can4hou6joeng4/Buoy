@@ -545,6 +545,11 @@ class NotificationKit:
 		):
 			return None
 
+		# 显式选择内置表格布局，可覆盖旧 Secret 中的格式/模板，保留凭据及通知选项。
+		if os.getenv('TELEGRAM_LAYOUT', '').strip().lower() == 'table':
+			parsed.pop('template', None)
+			parsed['platform_settings'] = {**(parsed.get('platform_settings') or {}), 'message_type': 'RichMarkdown'}
+
 		# 加载模板
 		# 历史自定义模板未声明解析模式时继续使用 HTML；显式旧模式继续走 sendMessage。
 		platform_settings = self._load_platform_settings(platform='telegram', parsed=parsed)

@@ -37,6 +37,8 @@ jobs:
       FEISHU_NOTIF_CONFIG: ${{ secrets.FEISHU_NOTIF_CONFIG }}
       WECOM_NOTIF_CONFIG: ${{ secrets.WECOM_NOTIF_CONFIG }}
       TELEGRAM_NOTIF_CONFIG: ${{ secrets.TELEGRAM_NOTIF_CONFIG }}
+      # table 显式选择内置 Rich Markdown 表格，覆盖旧 Secret 的模板/格式，保留凭据及通知选项
+      TELEGRAM_LAYOUT: ${{ vars.TELEGRAM_LAYOUT }}
       # 通知触发条件（默认在失败、任意账号余额变化、新增账号首次建立基线时通知，可通过仓库变量 NOTIFY_TRIGGERS 覆盖）
       NOTIFY_TRIGGERS: ${{ vars.NOTIFY_TRIGGERS || 'failed,balance_changed,first_seen' }}
     steps:
