@@ -362,9 +362,18 @@ Fork 本仓库内置的 workflow 默认读取仓库变量 `NOTIFY_TRIGGERS`，�
 
 以上变量在 `title` 和 `content` 模板中**均可使用**。
 
-Telegram 默认模板采用账号明细优先的紧凑排版和语义化 Emoji：保留执行时间，每个成功账号用一行展示账号名、当前额度和已用额度，不再在字段之间插入空白行。变化模式不一致时，变化值直接追加在对应账号行；多个账号具有完全相同的变化模式时，只追加一行共同变化摘要。底部使用单行签到统计，并在全部成功时保留庆祝提示。
+Telegram 默认模板仅用两行展示所有账号合计的「目前额度」和「已用额度」，金额统一保留两位小数，不再展示逐账号余额、单次消耗、额度变化、执行时间或签到统计。仅汇总本次获取到完整额度数据的账号；若有缺失，会注明汇总覆盖范围和未获取数据的账号，全部缺失时显示「暂不可用」。凭据失效、签到失败及上游故障仍附必要提醒，通知时机继续由 `NOTIFY_TRIGGERS` 控制。
 
-紧凑模板还提供以下变量，便于自定义消息时复用相同的聚合结果：
+额度汇总变量：
+
+- `has_balance_summary`: 是否有账号取得完整额度数据（零余额也算有效数据）
+- `total_quota_display` / `total_used_display`: 目前额度 / 已用额度合计，保留两位小数
+- `balance_summary_count`: 纳入合计的账号数
+- `balance_summary_incomplete`: 是否存在未取得完整额度数据的账号
+- `balance_unavailable_account_names`: 未取得完整额度数据的账号名称
+
+自定义模板还可以使用以下变量：
+
 - `other_failed_accounts`: 排除凭据失效后的普通失败账号
 - `credential_expired_count` / `credential_expired_account_names`: 凭据失效数量和已拼接名称
 - `only_credential_expired_failures`: 本次失败是否全部属于凭据失效

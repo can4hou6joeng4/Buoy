@@ -1,4 +1,5 @@
 import os
+from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
@@ -276,6 +277,12 @@ class NotificationKit:
 		]  # fmt: skip
 		other_failed_accounts = [acc for acc in failed_accounts if acc.status != 'credential_expired']
 
+		# 只汇总本次取得完整额度数据的账号，缺失数据不能当作零余额。
+		balance_summary_accounts = [acc for acc in data.accounts if acc.quota is not None and acc.used is not None]
+		balance_unavailable_accounts = [acc for acc in data.accounts if acc.quota is None or acc.used is None]
+		total_quota = sum((Decimal(str(acc.quota)) for acc in balance_summary_accounts), Decimal(0))
+		total_used = sum((Decimal(str(acc.used)) for acc in balance_summary_accounts), Decimal(0))
+
 		# 余额变化相关分组（明确只包含成功的账号）
 		balance_changed_accounts = [
 			acc for acc in success_accounts
@@ -298,9 +305,7 @@ class NotificationKit:
 			if acc.used_delta not in (None, 0)
 		]  # fmt: skip
 
-		# Telegram 等短消息渠道需要按「一次变化事件」聚合，而不是把同一账号按
-		# 成功、总额度变化、已使用变化重复列出。所有变化账号的变化模式相同时，
-		# 直接输出一条聚合摘要；否则为每个账号生成一条合并后的变化说明。
+		# 为自定义模板保留变化聚合：相同变化模式提供共同摘要，其他情况按账号合并。
 		balance_change_patterns = {
 			(
 				account.quota_delta_display if account.quota_delta not in (None, 0) else None,
@@ -345,6 +350,12 @@ class NotificationKit:
 			'timestamp': data.timestamp,
 			'timezone': data.timezone,
 			'stats': data.stats,  # dataclass 对象，支持 {{ stats.success_count }}
+			'has_balance_summary': bool(balance_summary_accounts),
+			'total_quota_display': f'{total_quota:.2f}',
+			'total_used_display': f'{total_used:.2f}',
+			'balance_summary_count': len(balance_summary_accounts),
+			'balance_summary_incomplete': bool(balance_unavailable_accounts),
+			'balance_unavailable_account_names': '、'.join(acc.name for acc in balance_unavailable_accounts),
 			# 提供分组的账号列表（AccountResult 对象）
 			'success_accounts': success_accounts,
 			'failed_accounts': failed_accounts,

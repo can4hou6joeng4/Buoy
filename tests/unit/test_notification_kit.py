@@ -3,6 +3,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
+from core.models import AccountResult
 from notif import NotificationKit
 from notif.models import NotificationHandler, NotificationTemplate
 from tests.tools.data_builders import build_account_result, build_notification_data
@@ -341,12 +342,12 @@ class TestNotificationKit:
 		assert [acc.name for acc in context['quota_changed_accounts']] == ['额度变化账号']
 		assert [acc.name for acc in context['used_changed_accounts']] == ['已用变化账号']
 
-	def test_default_telegram_template_prioritizes_failure_and_merges_account_changes(
+	def test_default_telegram_template_prioritizes_failure_and_marks_partial_totals(
 		self,
 		monkeypatch: pytest.MonkeyPatch,
 		clean_notification_env: None,
 	) -> None:
-		"""失败优先，且同一账号的额度与已用变化只展开一次。"""
+		"""失败优先显示异常标题，并明确标注部分额度合计。"""
 		monkeypatch.setenv(
 			'TELEGRAM_NOTIF_CONFIG',
 			'{"bot_token": "test_token", "chat_id": "123456"}',
@@ -381,22 +382,20 @@ class TestNotificationKit:
 		rendered_title, rendered_content = kit._render_template(kit.telegram_config.template, context)
 
 		assert rendered_title == '❌ AnyRouter 签到异常'
-		assert '<b>⏰ 执行时间：</b>' in rendered_content
-		assert '<b>💰 账号 A</b>｜额度 $30.0｜已用 $8.0｜💹 +5.0｜📈 +3.0' in rendered_content
-		assert '<b>💰 账号 B</b>｜额度 $20.0｜已用 $2.0' in rendered_content
+		assert rendered_content.splitlines()[:2] == ['<b>目前额度：</b>$50.00', '<b>已用额度：</b>$10.00']
+		assert '仅汇总已获取额度的 2/3 个账号；未获取：账号 C。' in rendered_content
 		assert '<b>❌ 账号 C：</b>登录失效' in rendered_content
-		assert rendered_content.count('账号 A') == 1
-		assert rendered_content.count('账号 C') == 1
-		assert rendered_content.count('账号 B') == 1
-		assert '<b>📊 签到统计：</b>✅ 2/3｜❌ 1/3' in rendered_content
-		assert '🎉 全部账号签到成功！' not in rendered_content
+		assert '账号 A' not in rendered_content
+		assert '账号 B' not in rendered_content
+		assert '+5.0' not in rendered_content
+		assert '+3.0' not in rendered_content
 
-	def test_default_telegram_template_aggregates_nine_uniform_quota_changes(
+	def test_default_telegram_template_shows_only_two_totals_for_nine_accounts(
 		self,
 		monkeypatch: pytest.MonkeyPatch,
 		clean_notification_env: None,
 	) -> None:
-		"""9 个账号具有相同变化时保留逐行余额，并只追加一行聚合变化。"""
+		"""9 个账号的正常通知仅保留两项合计，删除逐账号与共同变化明细。"""
 		monkeypatch.setenv(
 			'TELEGRAM_NOTIF_CONFIG',
 			'{"bot_token": "test_token", "chat_id": "123456"}',
@@ -427,22 +426,15 @@ class TestNotificationKit:
 		rendered_title, rendered_content = kit._render_template(kit.telegram_config.template, context)
 		content_lines = rendered_content.splitlines()
 
-		assert rendered_title == '💰 AnyRouter 额度更新'
-		assert content_lines[0] == '<b>⏰ 执行时间：</b>2026-09-21 10:00:00 CST'
-		assert content_lines[1:10] == [f'<b>💰 账号 {index}</b>｜额度 $50.0｜已用 $5.0' for index in range(1, 10)]
-		assert content_lines[10:] == [
-			'<b>💹 共同变化：</b>9 个账号额度均 +25.0',
-			'<b>📊 签到统计：</b>✅ 9/9｜❌ 0/9',
-			'🎉 全部账号签到成功！',
-		]
-		assert all(line.strip() for line in content_lines), '账号之间不应再插入空白行'
+		assert rendered_title == '💰 AnyRouter 额度汇总'
+		assert content_lines == ['<b>目前额度：</b>$450.00', '<b>已用额度：</b>$45.00']
 
-	def test_default_telegram_template_aggregates_uniform_quota_and_used_changes(
+	def test_default_telegram_template_omits_uniform_quota_and_used_changes(
 		self,
 		monkeypatch: pytest.MonkeyPatch,
 		clean_notification_env: None,
 	) -> None:
-		"""额度与已用均采用相同变化模式时，各保留一行聚合摘要。"""
+		"""共同额度变化与消耗不再显示，只展示累计额度。"""
 		monkeypatch.setenv(
 			'TELEGRAM_NOTIF_CONFIG',
 			'{"bot_token": "test_token", "chat_id": "123456"}',
@@ -469,16 +461,15 @@ class TestNotificationKit:
 		context = kit._build_context_data(build_notification_data(accounts))
 
 		rendered_title, rendered_content = kit._render_template(kit.telegram_config.template, context)
-		assert '<b>💹 共同变化：</b>3 个账号额度均 +5.0｜已用均 +3.0' in rendered_content
-		assert '<b>📊 签到统计：</b>✅ 3/3｜❌ 0/3' in rendered_content
-		assert '🎉 全部账号签到成功！' in rendered_content
+		assert rendered_title == '💰 AnyRouter 额度汇总'
+		assert rendered_content.splitlines() == ['<b>目前额度：</b>$90.00', '<b>已用额度：</b>$24.00']
 
-	def test_default_telegram_template_lists_non_uniform_changes_once_per_account(
+	def test_default_telegram_template_omits_non_uniform_changes(
 		self,
 		monkeypatch: pytest.MonkeyPatch,
 		clean_notification_env: None,
 	) -> None:
-		"""变化模式不一致时按账号展开，每个账号仍只出现一次。"""
+		"""变化模式不同也只汇总当前金额，合计保留两位小数。"""
 		monkeypatch.setenv(
 			'TELEGRAM_NOTIF_CONFIG',
 			'{"bot_token": "test_token", "chat_id": "123456"}',
@@ -490,8 +481,8 @@ class TestNotificationKit:
 		data = build_notification_data([
 			build_account_result(
 				name='账号 A',
-				quota=30.0,
-				used=8.0,
+				quota=30.15,
+				used=8.42,
 				balance_changed=True,
 				quota_delta=5.0,
 				used_delta=3.0,
@@ -500,8 +491,8 @@ class TestNotificationKit:
 			),
 			build_account_result(
 				name='账号 B',
-				quota=35.0,
-				used=5.0,
+				quota=35.27,
+				used=5.33,
 				balance_changed=True,
 				quota_delta=10.0,
 				used_delta=0.0,
@@ -513,18 +504,17 @@ class TestNotificationKit:
 
 		_, rendered_content = kit._render_template(kit.telegram_config.template, context)
 
-		assert '<b>💰 账号 A</b>｜额度 $30.0｜已用 $8.0｜💹 +5.0｜📈 +3.0' in rendered_content
-		assert '<b>💰 账号 B</b>｜额度 $35.0｜已用 $5.0｜💹 +10.0' in rendered_content
-		assert '共同变化' not in rendered_content
-		assert rendered_content.count('账号 A') == 1
-		assert rendered_content.count('账号 B') == 1
+		assert rendered_content.splitlines() == ['<b>目前额度：</b>$65.42', '<b>已用额度：</b>$13.75']
 
-	def test_default_telegram_template_includes_first_seen_section(
+	@pytest.mark.parametrize('quota,used', [(10.0, 1.0), (0.0, 0.0)])
+	def test_default_telegram_template_keeps_first_seen_and_zero_balances_compact(
 		self,
 		monkeypatch: pytest.MonkeyPatch,
 		clean_notification_env: None,
+		quota: float,
+		used: float,
 	) -> None:
-		"""测试默认 Telegram 模板会展示新增账号首次建立额度基线摘要"""
+		"""新增账号和真实零余额都只展示两项额度合计。"""
 		monkeypatch.setenv(
 			'TELEGRAM_NOTIF_CONFIG',
 			'{"bot_token": "test_token", "chat_id": "123456"}',
@@ -536,8 +526,8 @@ class TestNotificationKit:
 		data = build_notification_data([
 			build_account_result(
 				name='账号 D',
-				quota=10.0,
-				used=1.0,
+				quota=quota,
+				used=used,
 				balance_changed=False,
 				first_seen=True,
 			),
@@ -546,10 +536,30 @@ class TestNotificationKit:
 
 		rendered_title, rendered_content = kit._render_template(kit.telegram_config.template, context)
 
-		assert rendered_title == '🆕 AnyRouter 新账号接入'
+		assert rendered_title == '💰 AnyRouter 额度汇总'
 		assert context['has_first_seen'] is True
 		assert context['first_seen_accounts'][0].name == '账号 D'
-		assert '<b>💰 账号 D</b>｜额度 $10.0｜已用 $1.0' in rendered_content
-		assert '<b>🆕 新增账号：</b>账号 D｜额度基线已建立' in rendered_content
-		assert '<b>📊 签到统计：</b>✅ 1/1｜❌ 0/1' in rendered_content
-		assert '🎉 全部账号签到成功！' in rendered_content
+		assert rendered_content.splitlines() == [f'<b>目前额度：</b>${quota:.2f}', f'<b>已用额度：</b>${used:.2f}']
+
+	@pytest.mark.parametrize('quota,used', [(None, None), (None, 5.0), (25.0, None)])
+	def test_default_telegram_template_does_not_treat_missing_balances_as_zero(
+		self,
+		monkeypatch: pytest.MonkeyPatch,
+		clean_notification_env: None,
+		quota: float | None,
+		used: float | None,
+	) -> None:
+		"""签到成功但余额缺失时显示不可用，避免生成误导的零合计。"""
+		monkeypatch.setenv('TELEGRAM_NOTIF_CONFIG', '{"bot_token": "test_token", "chat_id": "123456"}')
+		kit = NotificationKit()
+		assert kit.telegram_config is not None
+		assert kit.telegram_config.template is not None
+		data = build_notification_data([AccountResult(name='账号 A', status='success', quota=quota, used=used)])
+
+		_, rendered_content = kit._render_template(kit.telegram_config.template, kit._build_context_data(data))
+
+		assert rendered_content.splitlines() == [
+			'<b>目前额度：</b>暂不可用',
+			'<b>已用额度：</b>暂不可用',
+			'⚠️ 仅汇总已获取额度的 0/1 个账号；未获取：账号 A。',
+		]
